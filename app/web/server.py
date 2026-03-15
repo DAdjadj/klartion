@@ -104,6 +104,26 @@ def connect():
         pending_bank=db.get_setting("pending_bank_name"),
     )
 
+@app.route("/callback")
+def callback():
+    error = request.args.get("error")
+    if error:
+        logger.warning("OAuth callback error: %s", error)
+        return redirect(url_for("connect") + "?error=" + error)
+    code  = request.args.get("code", "")
+    state = request.args.get("state", "")
+    if not code:
+        return redirect(url_for("connect") + "?error=missing_code")
+    try:
+        ok = enablebanking.complete_auth(code=code, state=state)
+        if ok:
+            return redirect(url_for("connect") + "?success=1")
+        else:
+            return redirect(url_for("connect") + "?error=auth_failed")
+    except Exception as e:
+        logger.error("Callback auth failed: %s", e)
+        return redirect(url_for("connect") + "?error=" + str(e))
+
 @app.route("/status")
 def status():
     if not _is_configured():

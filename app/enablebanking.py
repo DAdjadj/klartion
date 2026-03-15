@@ -55,7 +55,7 @@ def start_auth(bank_name: str, bank_country: str) -> dict:
             "country": bank_country,
         },
         "state": "klartion-auth",
-        "redirect_url": "https://klartion.com/",
+        "redirect_url": "https://klartion.com/callback",
         "psu_type": "personal",
     }
     resp = requests.post(f"{EB_BASE}/auth", headers=_headers(), json=payload, timeout=15)
