@@ -15,6 +15,7 @@ SMTP_PASSWORD       = os.environ.get("SMTP_PASSWORD", "")
 NOTIFY_EMAIL        = os.environ.get("NOTIFY_EMAIL", "")
 SYNC_TIME           = os.environ.get("SYNC_TIME", "08:00")
 SECRET_KEY          = os.environ.get("SECRET_KEY", "dev-secret-key")
+KLARTION_URL        = os.environ.get("KLARTION_URL", "http://localhost:3001")
 DB_PATH             = os.environ.get("DB_PATH", "/app/data/klartion.db")
 REDIRECT_URI        = "http://localhost:3000/callback"
 
