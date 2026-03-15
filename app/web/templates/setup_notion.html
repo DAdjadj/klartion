@@ -28,10 +28,10 @@
         <label for="notion_api_key" style="margin-top:0;">Internal integration secret</label>
         <input type="text" id="notion_api_key" name="notion_api_key" value="{{ notion_api_key }}" placeholder="secret_xxxxxxxxxxxxxxxxxxxx" autocomplete="off" autofocus required>
         <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">
-          Create one at <a href="https://notion.so/my-integrations" target="_blank" style="color:var(--muted);">notion.so/my-integrations</a>. Choose "Internal", then copy the secret. Then open your Notion database, click <strong>...</strong> > <strong>Connections</strong> and connect your integration so it has access.
+          Go to <a href="https://notion.so/my-integrations" target="_blank" style="color:var(--muted);">notion.so/my-integrations</a>, create a new integration, then click <strong>Configure integration settings</strong> and copy the secret shown under <strong>Internal integration secret</strong>. Then go to the <strong>Content access</strong> tab, click <strong>Edit access</strong> and select your database.
         </div>
         <label for="notion_database_id">Database ID</label>
-        <input type="text" id="notion_database_id" name="notion_database_id" value="{{ notion_database_id }}" placeholder="83b2b2e1a4f04c3b9e1234567890abcd" autocomplete="off" required>
+        <input type="text" id="notion_database_id" name="notion_database_id" value="{{ notion_database_id }}" placeholder="1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d" autocomplete="off" required>
         <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">
           Open your Notion database in the browser. The ID is the part of the URL after the last <code style="font-size:11px;">/</code> and before <code style="font-size:11px;">?v=</code>. If you use the desktop app, click <strong>...</strong> > <strong>Copy link</strong> and paste it in a browser to get the URL. <a href="https://notion.so" target="_blank" style="color:var(--muted);">Open Notion</a>
         </div>

@@ -109,7 +109,7 @@
 
     {% if tokens and not auth_url %}
       <div style="text-align:center;">
-        <a href="/status" class="btn btn-ghost">Continue to status →</a>
+        <a href="/status" class="btn btn-primary">Continue to status →</a>
       </div>
     {% endif %}
 
@@ -129,6 +129,8 @@
       try {
         const resp = await fetch('/banks');
         allBanks = await resp.json();
+        const q = document.getElementById('bank-search');
+        if (q && q.value.trim()) filterBanks(q.value);
       } catch(e) {
         console.error('Failed to load banks', e);
       }
