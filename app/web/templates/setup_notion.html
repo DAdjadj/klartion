@@ -25,8 +25,14 @@
       {% if error %}
         <div class="alert alert-error">{{ error }}</div>
       {% endif %}
+      <div style="background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:1rem 1.25rem; margin-bottom:1.5rem;">
+        <div style="font-size:13px; font-weight:600; margin-bottom:0.35rem;">Step 1 — Duplicate the Klartion template</div>
+        <div style="font-size:12px; color:var(--muted); margin-bottom:0.75rem;">Click the button below, then click <strong>Duplicate</strong> in the top right of the page to add the transaction database to your Notion workspace. Come back here when done.</div>
+        <a href="https://hilarious-mirror-513.notion.site/4f95e8e7b23183c3be5381bef1d906b2?v=4a25e8e7b23183aa938f88e50ab857e3" target="_blank" class="btn btn-primary" style="font-size:13px; display:inline-block;">Duplicate Notion template →</a>
+      </div>
+
       <form method="POST">
-        <label for="notion_api_key" style="margin-top:0;">Internal integration secret</label>
+        <label for="notion_api_key" style="margin-top:0;">Step 2 — Internal integration secret</label>
         <input type="text" id="notion_api_key" name="notion_api_key" value="{{ notion_api_key }}" placeholder="secret_xxxxxxxxxxxxxxxxxxxx" autocomplete="off" autofocus required>
         <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">
           Go to <a href="https://notion.so/my-integrations" target="_blank" style="color:var(--muted);">notion.so/my-integrations</a>, create a new integration, then click <strong>Configure integration settings</strong> and copy the secret shown under <strong>Internal integration secret</strong>. Then go to the <strong>Content access</strong> tab, click <strong>Edit access</strong> and select your database.
