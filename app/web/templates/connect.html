@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Klartion — Connect bank</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="wrap">
+    <a class="logo" href="/">
+      <div class="logo-mark">K</div>
+      <span class="logo-name">Klartion</span>
+    </a>
+
+    <div class="steps">
+      <div class="step done"></div>
+      <div class="step active"></div>
+      <div class="step"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Connect your bank</div>
+      <div class="card-sub">Step 2 of 3 — authorise read-only access via Enable Banking</div>
+
+      {% if error %}
+        <div class="alert alert-error">{{ error }}</div>
+      {% endif %}
+
+      {% if success %}
+        <div class="alert alert-success">
+          Bank connected successfully. Your first sync will run at {{ config.SYNC_TIME }} or you can trigger it manually from the status page.
+        </div>
+      {% endif %}
+
+      {% if tokens %}
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+          <div>
+            <div class="connected-pill">Connected</div>
+            <div style="margin-top:8px; font-family:var(--mono); font-size:13px; color:var(--muted);">
+              {{ tokens.bank_name }} ({{ tokens.bank_country }})
+            </div>
+          </div>
+          <form method="POST" action="/disconnect">
+            <button type="submit" class="btn btn-danger">Disconnect</button>
+          </form>
+        </div>
+        <hr class="divider">
+        <div style="font-size:13px; color:var(--muted);">
+          To connect a different bank, disconnect first then reconnect below.
+        </div>
+      {% else %}
+        <form method="POST" id="connect-form">
+          <input type="hidden" id="bank_name" name="bank_name">
+          <input type="hidden" id="bank_country" name="bank_country">
+
+          <label>Select your bank</label>
+          <div class="bank-grid">
+            {% for bank in banks %}
+            <button
+              type="button"
+              class="bank-btn"
+              onclick="selectBank('{{ bank.name }}', '{{ bank.country }}', this)"
+            >
+              {{ bank.name }}
+              <span class="bank-country">{{ bank.country }}</span>
+            </button>
+            {% endfor %}
+          </div>
+
+          <label for="custom_bank" style="margin-top:1.25rem;">Or enter bank name manually</label>
+          <input
+            type="text"
+            id="custom_bank"
+            placeholder="e.g. Barclays"
+            oninput="setCustomBank(this.value)"
+          >
+          <label for="custom_country">Bank country code</label>
+          <input
+            type="text"
+            id="custom_country"
+            placeholder="e.g. GB"
+            maxlength="2"
+            style="text-transform:uppercase;"
+            oninput="setCustomCountry(this.value)"
+          >
+
+          <button class="btn btn-primary" type="submit" id="connect-btn" disabled>
+            Connect bank →
+          </button>
+        </form>
+      {% endif %}
+    </div>
+
+    {% if tokens %}
+      <div style="text-align:center;">
+        <a href="/status" class="btn btn-ghost">Continue to status →</a>
+      </div>
+    {% endif %}
+
+    <nav class="footer-nav">
+      <a href="/setup">Setup</a>
+      <a href="/connect" class="active">Connect</a>
+      <a href="/status">Status</a>
+    </nav>
+  </div>
+
+  <script>
+    function selectBank(name, country, el) {
+      document.querySelectorAll('.bank-btn').forEach(b => b.classList.remove('selected'));
+      el.classList.add('selected');
+      document.getElementById('bank_name').value = name;
+      document.getElementById('bank_country').value = country;
+      document.getElementById('custom_bank').value = '';
+      document.getElementById('custom_country').value = '';
+      updateBtn();
+    }
+    function setCustomBank(val) {
+      document.querySelectorAll('.bank-btn').forEach(b => b.classList.remove('selected'));
+      document.getElementById('bank_name').value = val;
+      updateBtn();
+    }
+    function setCustomCountry(val) {
+      document.getElementById('bank_country').value = val.toUpperCase();
+      updateBtn();
+    }
+    function updateBtn() {
+      const name    = document.getElementById('bank_name').value.trim();
+      const country = document.getElementById('bank_country').value.trim();
+      document.getElementById('connect-btn').disabled = !(name && country.length === 2);
+    }
+  </script>
+</body>
+</html>

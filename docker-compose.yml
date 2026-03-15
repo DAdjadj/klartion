@@ -1,0 +1,11 @@
+services:
+  klartion:
+    build: .
+    container_name: klartion
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - .env
