@@ -25,7 +25,7 @@ def main():
         logger.warning("Missing config vars: %s — web UI will prompt for setup.", missing)
     else:
         # Validate licence on startup
-        result = {"valid": True, "error": None}  # DEV: skip licence
+        result = licence.validate()
         if not result["valid"] and not result.get("offline"):
             logger.error("Licence validation failed: %s", result["error"])
             logger.error("Please check your LICENCE_KEY in .env and restart.")

@@ -12,7 +12,7 @@ def run():
     logger.info("Starting sync run...")
 
     # 1. Licence check
-    result = {"valid": True, "error": None}  # DEV: skip licence
+    result = licence.validate()
     if not result["valid"]:
         msg = f"Licence invalid: {result['error']}"
         logger.error(msg)
