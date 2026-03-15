@@ -1,14 +1,9 @@
 import logging
-import json
+import time
 from datetime import datetime, timedelta, timezone
 from . import config, db
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Enable Banking uses JWT-signed requests. The SDK wraps this for us.
-# We use the REST API directly via requests for simplicity and full control.
-# ---------------------------------------------------------------------------
 
 import requests
 
@@ -19,9 +14,7 @@ def _load_private_key():
         return f.read()
 
 def _make_jwt():
-    """Create a JWT for Enable Banking API authentication."""
     import jwt as pyjwt
-    import time
     private_key = _load_private_key()
     now = int(time.time())
     payload = {
@@ -29,8 +22,7 @@ def _make_jwt():
         "iat": now,
         "exp": now + 3600,
     }
-    token = pyjwt.encode(payload, private_key, algorithm="RS256")
-    return token
+    return pyjwt.encode(payload, private_key, algorithm="RS256")
 
 def _headers():
     return {
@@ -38,10 +30,13 @@ def _headers():
         "Content-Type": "application/json",
     }
 
-def get_auth_url(bank_name: str, bank_country: str) -> str:
+def start_auth(bank_name: str, bank_country: str) -> dict:
     """
-    Start an Enable Banking session and return the auth URL to redirect the user to.
-    Stores the session state in the DB for the callback to retrieve.
+    Start an Enable Banking session.
+    Returns {"session_id": str, "url": str} where url is the bank auth link
+    the user must open in their browser. No redirect URI needed -- Enable Banking
+    shows a confirmation page after the user approves, and we poll the session
+    to retrieve the token.
     """
     payload = {
         "access": {
@@ -54,59 +49,70 @@ def get_auth_url(bank_name: str, bank_country: str) -> str:
             "country": bank_country,
         },
         "state": "klartion-auth",
-        "redirect_url": config.REDIRECT_URI,
+        "redirect_url": "https://klartion.com/callback",
         "psu_type": "personal",
     }
     resp = requests.post(f"{EB_BASE}/auth", headers=_headers(), json=payload, timeout=15)
     resp.raise_for_status()
     data = resp.json()
+
     session_id = data["session_id"]
     auth_url   = data["url"]
 
-    # Persist session_id so the callback can reference it
     db.set_setting("pending_session_id", session_id)
     db.set_setting("pending_bank_name", bank_name)
     db.set_setting("pending_bank_country", bank_country)
 
-    return auth_url
+    logger.info("Auth session started: %s for %s (%s)", session_id, bank_name, bank_country)
+    return {"session_id": session_id, "url": auth_url}
 
-def complete_auth(code: str) -> bool:
+def poll_auth() -> bool:
     """
-    Called from the OAuth callback. Exchanges the code for an access token.
+    Poll the pending session to check if the user has approved access.
+    Called after the user clicks "I've approved it" in the UI.
+    Returns True if token successfully captured, False if not yet approved.
+    Raises on hard errors.
     """
     session_id   = db.get_setting("pending_session_id")
     bank_name    = db.get_setting("pending_bank_name")
     bank_country = db.get_setting("pending_bank_country")
 
     if not session_id:
-        logger.error("No pending session found for OAuth callback.")
-        return False
+        raise ValueError("No pending auth session found.")
 
     resp = requests.get(
         f"{EB_BASE}/auth/{session_id}",
         headers=_headers(),
         timeout=15,
     )
+
+    if resp.status_code == 400:
+        # Not yet approved by user
+        return False
+
     resp.raise_for_status()
     data = resp.json()
 
-    access = data.get("access", {})
+    access      = data.get("access", {})
     valid_until = access.get("valid_until", "")
+
+    if not valid_until:
+        # Session exists but not yet authorised
+        return False
 
     db.save_tokens(
         session_id=session_id,
-        access_token=session_id,  # EB uses session_id as the bearer token handle
+        access_token=session_id,
         bank_name=bank_name,
         bank_country=bank_country,
         expires_at=valid_until,
     )
 
-    # Clear pending state
     db.set_setting("pending_session_id", "")
     db.set_setting("pending_bank_name", "")
     db.set_setting("pending_bank_country", "")
 
-    logger.info("Enable Banking auth completed for %s (%s)", bank_name, bank_country)
+    logger.info("Auth completed for %s (%s)", bank_name, bank_country)
     return True
 
 def get_accounts(session_id: str) -> list:
@@ -119,28 +125,17 @@ def get_accounts(session_id: str) -> list:
     return resp.json().get("accounts", [])
 
 def get_transactions(session_id: str, account_id: str, date_from: str, date_to: str) -> list:
-    """
-    Fetch booked transactions only (MVP: skip pending).
-    date_from / date_to in YYYY-MM-DD format.
-    """
     resp = requests.get(
         f"{EB_BASE}/accounts/{account_id}/transactions",
         headers={**_headers(), "Authorization-Session": session_id},
-        params={
-            "date_from": date_from,
-            "date_to": date_to,
-        },
+        params={"date_from": date_from, "date_to": date_to},
         timeout=30,
     )
     resp.raise_for_status()
     data = resp.json()
-    # Return only booked transactions for MVP
     return [t for t in data.get("transactions", []) if t.get("status") == "booked"]
 
 def check_token_expiry():
-    """
-    Returns number of days until token expiry, or None if no token.
-    """
     tokens = db.get_tokens()
     if not tokens or not tokens.get("expires_at"):
         return None
