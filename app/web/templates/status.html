@@ -22,19 +22,24 @@
     {% if days_left is not none and days_left <= 14 %}
       <div class="alert alert-warn">
         Your {{ tokens.bank_name }} connection expires in {{ days_left }} day{{ 's' if days_left != 1 else '' }}.
-        <a href="/connect" style="color:inherit;font-weight:600;"> Reconnect →</a>
+        <a href="/connect" style="color:inherit; font-weight:600;"> Reconnect →</a>
       </div>
     {% endif %}
 
     <div class="card">
-      <div class="card-title">Status</div>
-      <div class="card-sub">Step 3 of 3 — your sync is active</div>
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1.5rem;">
+        <div>
+          <div class="card-title" style="margin-bottom:0.25rem;">Status</div>
+          <div class="card-sub" style="margin-bottom:0;">Your sync is active</div>
+        </div>
+        <button class="btn btn-ghost" id="sync-btn" onclick="runSync()">Sync now</button>
+      </div>
 
       <div class="stat-row">
         <span class="stat-label">Bank</span>
-        <span class="stat-value">
+        <span class="stat-value" style="display:flex; align-items:center; gap:8px;">
           {{ tokens.bank_name }} ({{ tokens.bank_country }})
-          <span class="connected-pill" style="margin-left:8px;">Connected</span>
+          <span class="connected-pill">Connected</span>
         </span>
       </div>
       <div class="stat-row">
@@ -46,13 +51,13 @@
         <span class="stat-value">{{ sync_time }} daily</span>
       </div>
       <div class="stat-row">
-        <span class="stat-label">Notify</span>
+        <span class="stat-label">Notifications</span>
         <span class="stat-value">{{ notify_email }}</span>
       </div>
       {% if days_left is not none %}
       <div class="stat-row">
         <span class="stat-label">Token expiry</span>
-        <span class="stat-value" style="color: {% if days_left <= 14 %}var(--warn){% else %}var(--success){% endif %}">
+        <span class="stat-value" style="color:{% if days_left <= 14 %}var(--warn){% else %}var(--success){% endif %};">
           {{ days_left }} day{{ 's' if days_left != 1 else '' }} remaining
         </span>
       </div>
@@ -60,14 +65,7 @@
     </div>
 
     <div class="card">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.25rem;">
-        <div>
-          <div class="card-title" style="margin-bottom:0;">Sync log</div>
-          <div class="card-sub" style="margin-bottom:0;">Last 15 runs</div>
-        </div>
-        <button class="btn btn-ghost" id="sync-btn" onclick="runSync()">Sync now</button>
-      </div>
-
+      <div class="card-title" style="font-size:16px; margin-bottom:1rem;">Sync log</div>
       {% if syncs %}
         <table class="log-table">
           <thead>
@@ -82,27 +80,21 @@
             {% for s in syncs %}
             <tr>
               <td>{{ s.ran_at }}</td>
-              <td>
-                <span class="badge {% if s.status == 'success' %}badge-success{% else %}badge-fail{% endif %}">
-                  {{ s.status }}
-                </span>
-              </td>
+              <td><span class="badge {% if s.status == 'success' %}badge-success{% else %}badge-fail{% endif %}">{{ s.status }}</span></td>
               <td>{{ s.tx_count }}</td>
-              <td style="max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="{{ s.message }}">
-                {{ s.message or '—' }}
-              </td>
+              <td style="max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="{{ s.message }}">{{ s.message or '—' }}</td>
             </tr>
             {% endfor %}
           </tbody>
         </table>
       {% else %}
-        <div style="color:var(--muted); font-size:13px; text-align:center; padding:2rem 0;">
-          No syncs yet. The first sync will run at {{ sync_time }},<br>or click "Sync now" above.
+        <div style="color:var(--muted); font-size:13px; text-align:center; padding:2rem 0; line-height:1.6;">
+          No syncs yet.<br>Click "Sync now" above or wait for the scheduled run at {{ sync_time }}.
         </div>
       {% endif %}
     </div>
 
-    <div style="display:flex; gap:8px; justify-content:flex-end;">
+    <div style="display:flex; justify-content:flex-end;">
       <a href="/connect" class="btn btn-ghost">Manage connection</a>
     </div>
 
@@ -120,7 +112,7 @@
       btn.disabled = true;
       try {
         await fetch('/sync/now', { method: 'POST' });
-        btn.textContent = 'Started — check back in a moment';
+        btn.textContent = 'Started';
         setTimeout(() => location.reload(), 8000);
       } catch(e) {
         btn.textContent = 'Error — try again';

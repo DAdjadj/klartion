@@ -29,70 +29,96 @@
 
       {% if success %}
         <div class="alert alert-success">
-          Bank connected successfully. Your first sync will run at {{ config.SYNC_TIME }} or you can trigger it manually from the status page.
+          Bank connected. Your first sync runs at {{ sync_time }} — or trigger it manually from the status page.
         </div>
       {% endif %}
 
-      {% if tokens %}
+      {% if tokens and not auth_url %}
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
           <div>
             <div class="connected-pill">Connected</div>
-            <div style="margin-top:8px; font-family:var(--mono); font-size:13px; color:var(--muted);">
+            <div style="margin-top:8px; font-family:var(--mono); font-size:12px; color:var(--muted);">
               {{ tokens.bank_name }} ({{ tokens.bank_country }})
             </div>
           </div>
-          <form method="POST" action="/disconnect">
-            <button type="submit" class="btn btn-danger">Disconnect</button>
+          <form method="POST">
+            <input type="hidden" name="action" value="cancel">
+            <button type="submit" class="btn btn-danger-ghost">Disconnect</button>
           </form>
         </div>
-        <hr class="divider">
-        <div style="font-size:13px; color:var(--muted);">
-          To connect a different bank, disconnect first then reconnect below.
+
+      {% elif auth_url %}
+        <div class="alert alert-warn">
+          Authorisation link generated for <strong>{{ pending_bank }}</strong>.
         </div>
+
+        <div style="margin-bottom:1.5rem;">
+          <label style="margin-top:0;">Step 1 — open your bank's login page</label>
+          <a href="{{ auth_url }}" target="_blank" class="btn btn-primary" style="margin-top:0.75rem;">
+            Open bank authorisation →
+          </a>
+          <div style="font-size:12px; color:var(--muted); margin-top:0.6rem; line-height:1.5;">
+            Log in and approve read-only access. After approving, your browser will redirect to klartion.com — copy the full URL from the address bar and paste it below.
+          </div>
+        </div>
+
+        <form method="POST">
+          <input type="hidden" name="action" value="confirm">
+          <label>Step 2 — paste the redirect URL here</label>
+          <input
+            type="text"
+            name="redirect_url"
+            placeholder="https://klartion.com/?state=klartion-auth&code=..."
+            autocomplete="off"
+          >
+          <button type="submit" class="btn btn-primary" style="margin-top:1rem; background:#37996b;">
+            Confirm connection →
+          </button>
+        </form>
+
+        <form method="POST" style="margin-top:0.75rem;">
+          <input type="hidden" name="action" value="cancel">
+          <button type="submit" class="btn btn-secondary" style="margin-top:0;">
+            Cancel and start over
+          </button>
+        </form>
+
       {% else %}
         <form method="POST" id="connect-form">
-          <input type="hidden" id="bank_name" name="bank_name">
-          <input type="hidden" id="bank_country" name="bank_country">
+          <input type="hidden" name="action" value="start">
+          <input type="hidden" id="inp-bank-name" name="bank_name">
+          <input type="hidden" id="inp-bank-country" name="bank_country">
 
-          <label>Select your bank</label>
+          <label style="margin-top:0;">Select your bank</label>
           <div class="bank-grid">
             {% for bank in banks %}
-            <button
-              type="button"
-              class="bank-btn"
-              onclick="selectBank('{{ bank.name }}', '{{ bank.country }}', this)"
-            >
+            <button type="button" class="bank-btn" onclick="selectBank('{{ bank.name }}', '{{ bank.country }}', this)">
               {{ bank.name }}
               <span class="bank-country">{{ bank.country }}</span>
             </button>
             {% endfor %}
           </div>
 
-          <label for="custom_bank" style="margin-top:1.25rem;">Or enter bank name manually</label>
-          <input
-            type="text"
-            id="custom_bank"
-            placeholder="e.g. Barclays"
-            oninput="setCustomBank(this.value)"
-          >
-          <label for="custom_country">Bank country code</label>
-          <input
-            type="text"
-            id="custom_country"
-            placeholder="e.g. GB"
-            maxlength="2"
-            style="text-transform:uppercase;"
-            oninput="setCustomCountry(this.value)"
-          >
+          <div class="manual-section">
+            <button type="button" class="manual-toggle" onclick="toggleManual()">
+              <span id="manual-arrow">▸</span> My bank isn't listed
+            </button>
+            <div class="manual-fields" id="manual-fields" style="display:none;">
+              <label for="custom-bank">Bank name</label>
+              <input type="text" id="custom-bank" placeholder="e.g. Barclays" oninput="setCustomBank(this.value)">
+              <label for="custom-country">Country code</label>
+              <input type="text" id="custom-country" placeholder="e.g. GB" maxlength="2" style="text-transform:uppercase;" oninput="setCustomCountry(this.value)">
+            </div>
+          </div>
 
           <button class="btn btn-primary" type="submit" id="connect-btn" disabled>
-            Connect bank →
+            Generate bank link →
           </button>
         </form>
       {% endif %}
     </div>
 
-    {% if tokens %}
+    {% if tokens and not auth_url %}
       <div style="text-align:center;">
         <a href="/status" class="btn btn-ghost">Continue to status →</a>
       </div>
@@ -109,25 +135,32 @@
     function selectBank(name, country, el) {
       document.querySelectorAll('.bank-btn').forEach(b => b.classList.remove('selected'));
       el.classList.add('selected');
-      document.getElementById('bank_name').value = name;
-      document.getElementById('bank_country').value = country;
-      document.getElementById('custom_bank').value = '';
-      document.getElementById('custom_country').value = '';
+      document.getElementById('inp-bank-name').value = name;
+      document.getElementById('inp-bank-country').value = country;
+      document.getElementById('custom-bank').value = '';
+      document.getElementById('custom-country').value = '';
       updateBtn();
     }
     function setCustomBank(val) {
       document.querySelectorAll('.bank-btn').forEach(b => b.classList.remove('selected'));
-      document.getElementById('bank_name').value = val;
+      document.getElementById('inp-bank-name').value = val;
       updateBtn();
     }
     function setCustomCountry(val) {
-      document.getElementById('bank_country').value = val.toUpperCase();
+      document.getElementById('inp-bank-country').value = val.toUpperCase();
       updateBtn();
     }
     function updateBtn() {
-      const name    = document.getElementById('bank_name').value.trim();
-      const country = document.getElementById('bank_country').value.trim();
+      const name    = document.getElementById('inp-bank-name').value.trim();
+      const country = document.getElementById('inp-bank-country').value.trim();
       document.getElementById('connect-btn').disabled = !(name && country.length === 2);
+    }
+    function toggleManual() {
+      const fields = document.getElementById('manual-fields');
+      const arrow  = document.getElementById('manual-arrow');
+      const show   = fields.style.display === 'none';
+      fields.style.display = show ? 'block' : 'none';
+      arrow.textContent = show ? '▾' : '▸';
     }
   </script>
 </body>
