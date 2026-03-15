@@ -41,8 +41,7 @@
               {{ tokens.bank_name }} ({{ tokens.bank_country }})
             </div>
           </div>
-          <form method="POST">
-            <input type="hidden" name="action" value="cancel">
+          <form method="POST" action="/disconnect">
             <button type="submit" class="btn btn-danger-ghost">Disconnect</button>
           </form>
         </div>
@@ -51,36 +50,26 @@
         <div class="alert alert-warn">
           Authorisation link generated for <strong>{{ pending_bank }}</strong>.
         </div>
-
         <div style="margin-bottom:1.5rem;">
-          <label style="margin-top:0;">Step 1 — open your bank's login page</label>
+          <label style="margin-top:0;">Step 1 — open your bank login page</label>
           <a href="{{ auth_url }}" target="_blank" class="btn btn-primary" style="margin-top:0.75rem;">
             Open bank authorisation →
           </a>
           <div style="font-size:12px; color:var(--muted); margin-top:0.6rem; line-height:1.5;">
-            Log in and approve read-only access. After approving, your browser will redirect to klartion.com — copy the full URL from the address bar and paste it below.
+            Log in and approve read-only access. After approving, your browser redirects to klartion.com — copy the full URL and paste it below.
           </div>
         </div>
-
         <form method="POST">
           <input type="hidden" name="action" value="confirm">
           <label>Step 2 — paste the redirect URL here</label>
-          <input
-            type="text"
-            name="redirect_url"
-            placeholder="https://klartion.com/?state=klartion-auth&code=..."
-            autocomplete="off"
-          >
+          <input type="text" name="redirect_url" placeholder="https://klartion.com/?state=klartion-auth&code=..." autocomplete="off">
           <button type="submit" class="btn btn-primary" style="margin-top:1rem; background:#37996b;">
             Confirm connection →
           </button>
         </form>
-
         <form method="POST" style="margin-top:0.75rem;">
           <input type="hidden" name="action" value="cancel">
-          <button type="submit" class="btn btn-secondary" style="margin-top:0;">
-            Cancel and start over
-          </button>
+          <button type="submit" class="btn btn-secondary" style="margin-top:0;">Cancel and start over</button>
         </form>
 
       {% else %}
@@ -89,26 +78,31 @@
           <input type="hidden" id="inp-bank-name" name="bank_name">
           <input type="hidden" id="inp-bank-country" name="bank_country">
 
-          <label style="margin-top:0;">Select your bank</label>
-          <div class="bank-grid">
-            {% for bank in banks %}
-            <button type="button" class="bank-btn" onclick="selectBank('{{ bank.name }}', '{{ bank.country }}', this)">
-              {{ bank.name }}
-              <span class="bank-country">{{ bank.country }}</span>
-            </button>
-            {% endfor %}
+          <label style="margin-top:0;">Search your bank</label>
+          <div style="position:relative;">
+            <input
+              type="text"
+              id="bank-search"
+              placeholder="Type to search 2,500+ European banks..."
+              autocomplete="off"
+              oninput="filterBanks(this.value)"
+              onfocus="showDropdown()"
+            >
+            <div id="bank-dropdown" style="
+              display:none; position:absolute; top:100%; left:0; right:0;
+              background:#fff; border:1px solid var(--border); border-top:none;
+              border-radius:0 0 6px 6px; max-height:220px; overflow-y:auto;
+              z-index:100; box-shadow:0 4px 12px rgba(0,0,0,0.08);
+            "></div>
           </div>
 
-          <div class="manual-section">
-            <button type="button" class="manual-toggle" onclick="toggleManual()">
-              <span id="manual-arrow">▸</span> My bank isn't listed
-            </button>
-            <div class="manual-fields" id="manual-fields" style="display:none;">
-              <label for="custom-bank">Bank name</label>
-              <input type="text" id="custom-bank" placeholder="e.g. Barclays" oninput="setCustomBank(this.value)">
-              <label for="custom-country">Country code</label>
-              <input type="text" id="custom-country" placeholder="e.g. GB" maxlength="2" style="text-transform:uppercase;" oninput="setCustomCountry(this.value)">
-            </div>
+          <div id="selected-bank" style="display:none; margin-top:0.75rem; padding:10px 12px; background:var(--surface); border:1px solid var(--border); border-radius:6px; font-size:13px; align-items:center; justify-content:space-between;">
+            <span id="selected-label" style="font-weight:600;"></span>
+            <button type="button" onclick="clearBank()" style="background:none; border:none; color:var(--muted); cursor:pointer; font-size:11px; padding:0;">clear</button>
+          </div>
+
+          <div style="font-size:11px; color:var(--hint); margin-top:0.5rem;">
+            Personal accounts only. 2,500+ banks across 29 European countries.
           </div>
 
           <button class="btn btn-primary" type="submit" id="connect-btn" disabled>
@@ -132,36 +126,70 @@
   </div>
 
   <script>
-    function selectBank(name, country, el) {
-      document.querySelectorAll('.bank-btn').forEach(b => b.classList.remove('selected'));
-      el.classList.add('selected');
+    let allBanks = [];
+
+    async function loadBanks() {
+      try {
+        const resp = await fetch('/banks');
+        allBanks = await resp.json();
+      } catch(e) {
+        console.error('Failed to load banks', e);
+      }
+    }
+
+    function filterBanks(query) {
+      const dd = document.getElementById('bank-dropdown');
+      if (!query.trim()) { dd.style.display = 'none'; return; }
+      const q = query.toLowerCase();
+      const matches = allBanks.filter(b =>
+        b.name.toLowerCase().includes(q) || b.country.toLowerCase().includes(q)
+      ).slice(0, 40);
+      if (!matches.length) { dd.style.display = 'none'; return; }
+      dd.innerHTML = matches.map(b => `
+        <div onclick="selectBank('${b.name.replace(/'/g, "\\'")}','${b.country}')" style="
+          padding:9px 12px; cursor:pointer; font-size:13px;
+          display:flex; justify-content:space-between; align-items:center;
+          border-bottom:1px solid #f0efeb;
+        " onmouseover="this.style.background='#f7f6f3'" onmouseout="this.style.background=''">
+          <span>${b.name}</span>
+          <span style="font-size:11px; color:#9ca3af; font-family:monospace;">${b.country}</span>
+        </div>
+      `).join('');
+      dd.style.display = 'block';
+    }
+
+    function showDropdown() {
+      const q = document.getElementById('bank-search').value;
+      if (q.trim()) filterBanks(q);
+    }
+
+    function selectBank(name, country) {
       document.getElementById('inp-bank-name').value = name;
       document.getElementById('inp-bank-country').value = country;
-      document.getElementById('custom-bank').value = '';
-      document.getElementById('custom-country').value = '';
-      updateBtn();
+      document.getElementById('bank-search').value = '';
+      document.getElementById('bank-dropdown').style.display = 'none';
+      const sel = document.getElementById('selected-bank');
+      document.getElementById('selected-label').textContent = name + ' (' + country + ')';
+      sel.style.display = 'flex';
+      document.getElementById('connect-btn').disabled = false;
     }
-    function setCustomBank(val) {
-      document.querySelectorAll('.bank-btn').forEach(b => b.classList.remove('selected'));
-      document.getElementById('inp-bank-name').value = val;
-      updateBtn();
+
+    function clearBank() {
+      document.getElementById('inp-bank-name').value = '';
+      document.getElementById('inp-bank-country').value = '';
+      document.getElementById('bank-search').value = '';
+      document.getElementById('selected-bank').style.display = 'none';
+      document.getElementById('connect-btn').disabled = true;
     }
-    function setCustomCountry(val) {
-      document.getElementById('inp-bank-country').value = val.toUpperCase();
-      updateBtn();
-    }
-    function updateBtn() {
-      const name    = document.getElementById('inp-bank-name').value.trim();
-      const country = document.getElementById('inp-bank-country').value.trim();
-      document.getElementById('connect-btn').disabled = !(name && country.length === 2);
-    }
-    function toggleManual() {
-      const fields = document.getElementById('manual-fields');
-      const arrow  = document.getElementById('manual-arrow');
-      const show   = fields.style.display === 'none';
-      fields.style.display = show ? 'block' : 'none';
-      arrow.textContent = show ? '▾' : '▸';
-    }
+
+    document.addEventListener('click', function(e) {
+      const dd = document.getElementById('bank-dropdown');
+      if (dd && !dd.contains(e.target) && e.target.id !== 'bank-search') {
+        dd.style.display = 'none';
+      }
+    });
+
+    loadBanks();
   </script>
 </body>
 </html>

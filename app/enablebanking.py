@@ -1,22 +1,17 @@
 import logging
 import time
+import uuid
+import requests
 from datetime import datetime, timedelta, timezone
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from . import config, db
 
 logger = logging.getLogger(__name__)
 
-import requests
-
 EB_BASE = "https://api.enablebanking.com"
-
-def _load_private_key():
-    with open(config.EB_PRIVATE_KEY_PATH, "r") as f:
-        return f.read()
 
 def _make_jwt():
     import jwt as pyjwt
-    import uuid
-    from cryptography.hazmat.primitives.serialization import load_pem_private_key
     key_data = open(config.EB_PRIVATE_KEY_PATH, "rb").read()
     private_key = load_pem_private_key(key_data, password=None)
     now = int(time.time())
@@ -36,19 +31,24 @@ def _headers():
         "Content-Type": "application/json",
     }
 
+def get_banks() -> list:
+    resp = requests.get(f"{EB_BASE}/aspsps", headers=_headers(), timeout=15)
+    resp.raise_for_status()
+    banks = resp.json().get("aspsps", [])
+    result = []
+    for b in banks:
+        if "personal" in b.get("psu_types", []):
+            result.append({"name": b["name"], "country": b["country"]})
+    result.sort(key=lambda x: x["name"].lower())
+    return result
+
 def start_auth(bank_name: str, bank_country: str) -> dict:
-    """
-    Start an Enable Banking session.
-    Returns {"session_id": str, "url": str} where url is the bank auth link
-    the user must open in their browser. No redirect URI needed -- Enable Banking
-    shows a confirmation page after the user approves, and we poll the session
-    to retrieve the token.
-    """
+    valid_until = (datetime.now(timezone.utc) + timedelta(days=89)).strftime("%Y-%m-%dT%H:%M:%SZ")
     payload = {
         "access": {
             "balances": True,
             "transactions": True,
-            "valid_until": (datetime.now(timezone.utc) + timedelta(days=89)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "valid_until": valid_until,
         },
         "aspsp": {
             "name": bank_name,
@@ -65,7 +65,6 @@ def start_auth(bank_name: str, bank_country: str) -> dict:
     session_id = data["authorization_id"]
     auth_url   = data["url"]
 
-    valid_until = payload["access"]["valid_until"]
     db.set_setting("pending_session_id", session_id)
     db.set_setting("pending_bank_name", bank_name)
     db.set_setting("pending_bank_country", bank_country)
@@ -75,12 +74,9 @@ def start_auth(bank_name: str, bank_country: str) -> dict:
     return {"session_id": session_id, "url": auth_url}
 
 def complete_auth(code: str, state: str) -> bool:
-    """
-    Exchange the code from the redirect URL for a session.
-    Called after the user pastes the redirect URL back into Klartion.
-    """
     bank_name    = db.get_setting("pending_bank_name")
     bank_country = db.get_setting("pending_bank_country")
+    valid_until  = db.get_setting("pending_valid_until") or ""
 
     if not code or not state:
         raise ValueError("Missing code or state from redirect URL.")
@@ -95,13 +91,11 @@ def complete_auth(code: str, state: str) -> bool:
     data = resp.json()
 
     session_id  = data["session_id"]
-    valid_until = db.get_setting("pending_valid_until") or ""
     accounts    = data.get("accounts", [])
 
     if not accounts:
         raise ValueError("No accounts returned. Check your bank connection.")
 
-    # Pick first account and store its UID for transaction fetching
     account = accounts[0]
     account_uid = (
         account.get("uid")

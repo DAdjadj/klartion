@@ -35,6 +35,7 @@ def setup():
                 error = f"Missing configuration: {', '.join(missing)}. Please update your .env file and restart."
             else:
                 return redirect(url_for("connect"))
+
     missing = config.validate()
     return render_template("setup.html",
         error=error,
@@ -56,7 +57,6 @@ def connect():
 
     if request.method == "POST":
         action = request.form.get("action")
-        logger.info("POST data: %s", dict(request.form))
 
         if action == "start":
             bank_name    = request.form.get("bank_name", "").strip()
@@ -65,35 +65,25 @@ def connect():
                 error = "Please select a bank and country."
             else:
                 try:
-                    result     = enablebanking.start_auth(bank_name, bank_country)
-                    auth_url   = result["url"]
+                    result   = enablebanking.start_auth(bank_name, bank_country)
+                    auth_url = result["url"]
                     pending_id = result["session_id"]
                 except Exception as e:
-                    logger.error("Failed to start auth: %s %s", e, getattr(getattr(e, "response", None), "text", ""))
+                    logger.error("Failed to start auth: %s", e)
                     error = f"Could not start bank connection: {e}"
 
         elif action == "confirm":
-            redirect_url = request.form.get("redirect_url", "").strip()
-            if not redirect_url:
-                error = "Please paste the full redirect URL."
-                pending_id = db.get_setting("pending_session_id")
-            else:
-                try:
-                    from urllib.parse import urlparse, parse_qs
-                    params = parse_qs(urlparse(redirect_url).query)
-                    code  = params.get("code", [None])[0]
-                    state = params.get("state", [None])[0]
-                    if not code:
-                        error = "Could not find 'code' in the URL. Make sure you copied the full URL."
-                        pending_id = db.get_setting("pending_session_id")
-                    else:
-                        ok = enablebanking.complete_auth(code=code, state=state)
-                        if ok:
-                            return redirect(url_for("connect") + "?success=1")
-                except Exception as e:
-                    logger.error("Complete auth failed: %s", e)
-                    error = f"Could not confirm connection: {e}"
+            try:
+                ok = enablebanking.poll_auth()
+                if ok:
+                    return redirect(url_for("connect") + "?success=1")
+                else:
+                    error = "Bank access not confirmed yet. Please make sure you approved it in your browser, then try again."
+                    auth_url = None
                     pending_id = db.get_setting("pending_session_id")
+            except Exception as e:
+                logger.error("Poll auth failed: %s", e)
+                error = f"Could not confirm connection: {e}"
 
         elif action == "cancel":
             db.set_setting("pending_session_id", "")
@@ -112,7 +102,6 @@ def connect():
         auth_url=auth_url,
         pending_id=pending_id,
         pending_bank=db.get_setting("pending_bank_name"),
-        sync_time=config.SYNC_TIME,
     )
 
 @app.route("/status")
@@ -135,6 +124,19 @@ def status():
         sync_time=config.SYNC_TIME,
         notify_email=config.NOTIFY_EMAIL,
     )
+
+_banks_cache = None
+
+@app.route("/banks")
+def banks():
+    global _banks_cache
+    if _banks_cache is None:
+        try:
+            _banks_cache = enablebanking.get_banks()
+        except Exception as e:
+            logger.error("Failed to fetch banks: %s", e)
+            return jsonify([])
+    return jsonify(_banks_cache)
 
 @app.route("/sync/now", methods=["POST"])
 def sync_now():
