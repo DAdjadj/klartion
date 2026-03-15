@@ -46,31 +46,24 @@ def run():
 
     logger.info("Fetching transactions from %s to %s", date_from, date_to)
 
-    # 5. Fetch accounts
-    try:
-        accounts = enablebanking.get_accounts(session_id)
-    except Exception as e:
-        msg = f"Failed to fetch accounts from Enable Banking: {e}"
+    # 5. Get account UID from stored tokens (set during OAuth)
+    account_uid = tokens.get("access_token")
+    if not account_uid:
+        msg = "No account UID found. Please reconnect your bank."
         logger.error(msg)
         db.log_sync("failure", message=msg)
         email_notify.send_failure(msg)
         return False, 0, msg
 
-    if not accounts:
-        msg = "No accounts found on this bank connection."
-        logger.warning(msg)
-        db.log_sync("success", tx_count=0, message=msg)
-        return True, 0, msg
-
-    # 6. Fetch transactions across all accounts
-    all_transactions = []
-    for account in accounts:
-        account_id = account.get("id") or account.get("account_id")
-        try:
-            txs = enablebanking.get_transactions(session_id, account_id, date_from, date_to)
-            all_transactions.extend(txs)
-        except Exception as e:
-            logger.warning("Failed to fetch transactions for account %s: %s", account_id, e)
+    # 6. Fetch transactions directly by account UID
+    try:
+        all_transactions = enablebanking.get_transactions(session_id, account_uid, date_from, date_to)
+    except Exception as e:
+        msg = f"Failed to fetch transactions from Enable Banking: {e}"
+        logger.error(msg)
+        db.log_sync("failure", message=msg)
+        email_notify.send_failure(msg)
+        return False, 0, msg
 
     logger.info("Fetched %d transactions from Enable Banking", len(all_transactions))
 
@@ -148,20 +141,33 @@ def _normalise(tx: dict) -> dict:
     amount_obj = tx.get("transaction_amount") or {}
     amount     = float(amount_obj.get("amount", 0) or 0)
     currency   = amount_obj.get("currency", "EUR")
-    direction  = "in" if amount >= 0 else "out"
+    indicator  = tx.get("credit_debit_indicator", "DBIT")
+    direction  = "in" if indicator == "CRDT" else "out"
     amount     = abs(amount)
 
-    merchant = (
-        tx.get("creditor_name")
-        or tx.get("debtor_name")
-        or tx.get("remittance_information_unstructured")
-        or "Unknown"
-    )
+    # Direction: DBIT = debit (money out), CRDT = credit (money in)
+    indicator = tx.get("credit_debit_indicator", "DBIT")
+    if indicator == "DBIT":
+        merchant = (
+            (tx.get("creditor") or {}).get("name")
+            or tx.get("creditor_name")
+            or (tx.get("remittance_information") or [None])[0]
+            or tx.get("remittance_information_unstructured")
+            or "Unknown"
+        )
+    else:
+        merchant = (
+            (tx.get("debtor") or {}).get("name")
+            or tx.get("debtor_name")
+            or (tx.get("remittance_information") or [None])[0]
+            or tx.get("remittance_information_unstructured")
+            or "Unknown"
+        )
 
     reference = tx.get("remittance_information_unstructured") or tx.get("end_to_end_id") or ""
-    category  = tx.get("proprietary_bank_transaction_code") or "Uncategorised"
+    category  = (tx.get("bank_transaction_code") or {}).get("code") or tx.get("proprietary_bank_transaction_code") or "Uncategorised"
     date      = tx.get("booking_date") or tx.get("value_date") or ""
-    status    = "Cleared" if tx.get("status") == "booked" else "Pending"
+    status    = "Cleared" if tx.get("status") in ("booked", "BOOK") else "Pending"
 
     return {
         "tx_id":     _get_tx_id(tx),

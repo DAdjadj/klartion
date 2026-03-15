@@ -46,8 +46,6 @@ def start_auth(bank_name: str, bank_country: str) -> dict:
     valid_until = (datetime.now(timezone.utc) + timedelta(days=89)).strftime("%Y-%m-%dT%H:%M:%SZ")
     payload = {
         "access": {
-            "balances": True,
-            "transactions": True,
             "valid_until": valid_until,
         },
         "aspsp": {
@@ -132,16 +130,26 @@ def get_accounts(session_id: str) -> list:
     resp.raise_for_status()
     return resp.json().get("accounts", [])
 
-def get_transactions(session_id: str, account_id: str, date_from: str, date_to: str) -> list:
-    resp = requests.get(
-        f"{EB_BASE}/accounts/{account_id}/transactions",
-        headers={**_headers(), "Authorization-Session": session_id},
-        params={"date_from": date_from, "date_to": date_to},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    data = resp.json()
-    return [t for t in data.get("transactions", []) if t.get("status") == "booked"]
+def get_transactions(session_id: str, account_uid: str, date_from: str, date_to: str) -> list:
+    """
+    Fetch booked transactions for an account by UID.
+    Uses pagination via continuation_key if present.
+    """
+    all_txns = []
+    params = {"date_from": date_from, "date_to": date_to}
+    url = f"{EB_BASE}/accounts/{account_uid}/transactions"
+    while url:
+        resp = requests.get(url, headers=_headers(), params=params, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        all_txns.extend(data.get("transactions", []))
+        ck = data.get("continuation_key")
+        if ck:
+            url = f"{EB_BASE}/accounts/{account_uid}/transactions"
+            params = {"continuation_key": ck}
+        else:
+            url = None
+    return [t for t in all_txns if t.get("status") in ("BOOK", "booked", "PDNG", "pending")]
 
 def check_token_expiry():
     tokens = db.get_tokens()
