@@ -177,3 +177,8 @@ input::placeholder { color: var(--hint); }
 .footer-nav a { color: var(--muted); text-decoration: none; font-size: 13px; transition: color 0.15s; }
 .footer-nav a:hover { color: var(--text); }
 .footer-nav a.active { color: var(--text); font-weight: 600; }
+
+/* app footer */
+.app-footer { display: flex; gap: 1.5rem; justify-content: center; margin-top: 2.5rem; padding-bottom: 2rem; flex-wrap: wrap; border-top: 1px solid var(--border); padding-top: 1.25rem; }
+.app-footer a { color: #c4c4c4; text-decoration: none; font-size: 11px; letter-spacing: 0.03em; transition: color 0.15s; }
+.app-footer a:hover { color: var(--muted); }

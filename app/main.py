@@ -1,7 +1,7 @@
 import logging
 import threading
 import sys
-from . import config, db, licence
+from . import db
 from .scheduler import start as start_scheduler
 from .web.server import start as start_web
 
@@ -15,31 +15,26 @@ logger = logging.getLogger(__name__)
 def main():
     logger.info("Klartion starting up...")
 
-    # Initialise database
+    # Initialise database first (config depends on it)
     db.init()
-    logger.info("Database initialised at %s", config.DB_PATH)
+    logger.info("Database initialised.")
 
-    # Validate environment
-    missing = config.validate()
-    if missing:
-        logger.warning("Missing config vars: %s — web UI will prompt for setup.", missing)
-    else:
-        # Validate licence on startup
+    # Import config after db is ready
+    from . import config
+
+    if config.is_configured():
+        # Validate licence
+        from . import licence
         result = licence.validate()
         if not result["valid"] and not result.get("offline"):
-            logger.error("Licence validation failed: %s", result["error"])
-            logger.error("Please check your LICENCE_KEY in .env and restart.")
-            sys.exit(1)
-        elif result.get("offline"):
-            logger.warning("Could not reach Lemon Squeezy — proceeding offline.")
+            logger.warning("Licence invalid: %s — web UI will prompt for setup.", result["error"])
         else:
-            logger.info("Licence valid.")
+            # Start scheduler
+            start_scheduler()
+    else:
+        logger.info("Not fully configured yet — skipping scheduler. Complete setup at http://localhost:3001")
 
-        # Start scheduler in background thread
-        start_scheduler()
-
-    # Start Flask web server (blocking, main thread)
-    logger.info("Web UI available at http://localhost:3000")
+    logger.info("Web UI available at http://localhost:3001")
     start_web(host="0.0.0.0", port=3000)
 
 if __name__ == "__main__":

@@ -19,6 +19,18 @@
       <div class="step active"></div>
     </div>
 
+    {% if licence_sync_failed %}
+      {% if licence_limit_reached %}
+        <div class="alert alert-error">
+          Your license is inactive and syncing has stopped. <a href="https://app.lemonsqueezy.com/my-orders" target="_blank" style="color:inherit; font-weight:600;">Manage your license →</a>
+        </div>
+      {% else %}
+        <div class="alert alert-warn">
+          Your license is not activated on this machine. <a href="/setup" style="color:inherit; font-weight:600;">Re-enter your license key →</a>
+        </div>
+      {% endif %}
+    {% endif %}
+
     {% if days_left is not none and days_left <= 14 %}
       <div class="alert alert-warn">
         Your {{ tokens.bank_name }} connection expires in {{ days_left }} day{{ 's' if days_left != 1 else '' }}.
@@ -94,13 +106,25 @@
       {% endif %}
     </div>
 
-    <div style="display:flex; justify-content:flex-end;">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      {% if activation_usage > 0 %}
+      <form method="POST" action="/settings/deactivate" onsubmit="return confirm('This will deactivate your license on this machine. You can re-enter your key to reactivate. Continue?');">
+        <button type="submit" class="btn btn-ghost" style="color:var(--danger, #e53e3e); font-size:12px;">Deactivate license ({{ activation_usage }}/{{ activation_limit }} activations used)</button>
+      </form>
+      {% else %}
+      <div>
+        <a href="/setup" class="btn btn-ghost" style="font-size:12px;">Enter your license key</a>
+        <span style="font-size:11px; color:var(--muted); margin-left:0.5rem;">No license? <a href="https://david-alves.lemonsqueezy.com/checkout/buy/f24a36ac-3c66-4aaf-b272-9cce226a0ebf" target="_blank" style="color:var(--muted);">Buy one →</a></span>
+      </div>
+      {% endif %}
       <a href="/connect" class="btn btn-ghost">Manage connection</a>
     </div>
 
     <nav class="footer-nav">
-      <a href="/setup">Setup</a>
-      <a href="/connect">Connect</a>
+      <a href="/setup">License</a>
+      <a href="/setup/notion">Notion</a>
+      <a href="/setup/notifications">Notifications</a>
+      <a href="/connect">Bank</a>
       <a href="/status" class="active">Status</a>
     </nav>
   </div>
@@ -120,5 +144,11 @@
       }
     }
   </script>
+    <footer class="app-footer">
+      <a href="mailto:support@david-alves.com">Support</a>
+      <a href="https://klartion.com/privacy" target="_blank">Privacy</a>
+      <a href="https://klartion.com/terms" target="_blank">Terms</a>
+      <a href="https://github.com/DAdjadj/klartion" target="_blank">GitHub</a>
+    </footer>
 </body>
 </html>

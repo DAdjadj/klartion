@@ -114,8 +114,10 @@
     {% endif %}
 
     <nav class="footer-nav">
-      <a href="/setup">Setup</a>
-      <a href="/connect" class="active">Connect</a>
+      <a href="/setup">License</a>
+      <a href="/setup/notion">Notion</a>
+      <a href="/setup/notifications">Notifications</a>
+      <a href="/connect" class="active">Bank</a>
       <a href="/status">Status</a>
     </nav>
   </div>
@@ -133,6 +135,7 @@
     }
 
     function filterBanks(query) {
+      if (!allBanks.length) loadBanks();
       const dd = document.getElementById('bank-dropdown');
       if (!query.trim()) { dd.style.display = 'none'; return; }
       const q = query.toLowerCase();
@@ -196,5 +199,11 @@
 
 
   </script>
+    <footer class="app-footer">
+      <a href="mailto:support@david-alves.com">Support</a>
+      <a href="https://klartion.com/privacy" target="_blank">Privacy</a>
+      <a href="https://klartion.com/terms" target="_blank">Terms</a>
+      <a href="https://github.com/DAdjadj/klartion" target="_blank">GitHub</a>
+    </footer>
 </body>
 </html>

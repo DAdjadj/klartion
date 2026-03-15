@@ -12,57 +12,36 @@
       <div class="logo-mark">K</div>
       <span class="logo-name">Klartion</span>
     </a>
-
     <div class="steps">
       <div class="step active"></div>
       <div class="step"></div>
       <div class="step"></div>
+      <div class="step"></div>
     </div>
-
     <div class="card">
-      <div class="card-title">Configuration</div>
-      <div class="card-sub">Step 1 of 3 — verify your setup before connecting your bank</div>
-
+      <div class="card-title">Welcome to Klartion</div>
+      <div class="card-sub">Step 1 of 4 — enter your license key to get started</div>
       {% if error %}
         <div class="alert alert-error">{{ error }}</div>
       {% endif %}
-
-      {% if missing %}
-        <div class="alert alert-warn">
-          Missing in your .env file: {{ missing | join(', ') }}<br>
-          Update the file and restart the container.
-        </div>
-      {% endif %}
-
-      {% if not missing %}
-        <div class="alert alert-success">All environment variables are configured.</div>
-      {% endif %}
-
-      <div class="stat-row">
-        <span class="stat-label">Sync time</span>
-        <span class="stat-value">{{ sync_time }}</span>
-      </div>
-      <div class="stat-row">
-        <span class="stat-label">Notify email</span>
-        <span class="stat-value">{{ notify_email }}</span>
-      </div>
-
       <form method="POST">
-        <label for="license_key">License key</label>
+        <label for="license_key" style="margin-top:0;">License key</label>
         <input
           type="text"
           id="license_key"
           name="license_key"
+          value="{{ license_key }}"
           placeholder="XXXX-XXXX-XXXX-XXXX"
           autocomplete="off"
+          autofocus
           required
         >
-        <button class="btn btn-primary" type="submit" {% if missing %}disabled{% endif %}>
-          Continue →
-        </button>
+        <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">
+          Don't have one? <a href="https://klartion.com" style="color:var(--muted);">Purchase at klartion.com →</a>
+        </div>
+        <button class="btn btn-primary" type="submit">Continue →</button>
       </form>
     </div>
-
     <nav class="footer-nav">
       <a href="/setup" class="active">License</a>
       <a href="/setup/notion">Notion</a>
