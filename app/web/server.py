@@ -56,6 +56,7 @@ def connect():
 
     if request.method == "POST":
         action = request.form.get("action")
+        logger.info("POST data: %s", dict(request.form))
 
         if action == "start":
             bank_name    = request.form.get("bank_name", "").strip()
@@ -68,20 +69,31 @@ def connect():
                     auth_url   = result["url"]
                     pending_id = result["session_id"]
                 except Exception as e:
-                    logger.error("Failed to start auth: %s", e)
+                    logger.error("Failed to start auth: %s %s", e, getattr(getattr(e, "response", None), "text", ""))
                     error = f"Could not start bank connection: {e}"
 
         elif action == "confirm":
-            try:
-                ok = enablebanking.poll_auth()
-                if ok:
-                    return redirect(url_for("connect") + "?success=1")
-                else:
-                    error = "Bank access not confirmed yet. Please make sure you approved it in your browser, then try again."
+            redirect_url = request.form.get("redirect_url", "").strip()
+            if not redirect_url:
+                error = "Please paste the full redirect URL."
+                pending_id = db.get_setting("pending_session_id")
+            else:
+                try:
+                    from urllib.parse import urlparse, parse_qs
+                    params = parse_qs(urlparse(redirect_url).query)
+                    code  = params.get("code", [None])[0]
+                    state = params.get("state", [None])[0]
+                    if not code:
+                        error = "Could not find 'code' in the URL. Make sure you copied the full URL."
+                        pending_id = db.get_setting("pending_session_id")
+                    else:
+                        ok = enablebanking.complete_auth(code=code, state=state)
+                        if ok:
+                            return redirect(url_for("connect") + "?success=1")
+                except Exception as e:
+                    logger.error("Complete auth failed: %s", e)
+                    error = f"Could not confirm connection: {e}"
                     pending_id = db.get_setting("pending_session_id")
-            except Exception as e:
-                logger.error("Poll auth failed: %s", e)
-                error = f"Could not confirm connection: {e}"
 
         elif action == "cancel":
             db.set_setting("pending_session_id", "")
