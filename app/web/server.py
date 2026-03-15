@@ -102,6 +102,7 @@ def connect():
         auth_url=auth_url,
         pending_id=pending_id,
         pending_bank=db.get_setting("pending_bank_name"),
+        sync_time=config.SYNC_TIME,
     )
 
 @app.route("/callback")
