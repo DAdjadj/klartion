@@ -115,7 +115,7 @@ def callback():
     if not code:
         return redirect(url_for("connect") + "?error=missing_code")
     try:
-        ok = enablebanking.complete_auth(code=code, state=state)
+        ok = enablebanking.complete_auth(code=code, state=state)  # complete_auth strips the URL from state internally
         if ok:
             return redirect(url_for("connect") + "?success=1")
         else:

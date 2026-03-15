@@ -54,7 +54,7 @@ def start_auth(bank_name: str, bank_country: str) -> dict:
             "name": bank_name,
             "country": bank_country,
         },
-        "state": "klartion-auth",
+        "state": f"klartion-auth|{config.KLARTION_URL}",
         "redirect_url": "https://klartion.com/callback",
         "psu_type": "personal",
     }
@@ -81,10 +81,13 @@ def complete_auth(code: str, state: str) -> bool:
     if not code or not state:
         raise ValueError("Missing code or state from redirect URL.")
 
+    # Strip the embedded KLARTION_URL from state before sending to Enable Banking
+    clean_state = state.split("|")[0] if "|" in state else state
+
     resp = requests.post(
         f"{EB_BASE}/sessions",
         headers=_headers(),
-        json={"code": code, "state": state},
+        json={"code": code, "state": clean_state},
         timeout=15,
     )
     resp.raise_for_status()
