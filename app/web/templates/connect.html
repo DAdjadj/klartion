@@ -47,30 +47,25 @@
         </div>
 
       {% elif auth_url %}
-        <div class="alert alert-warn">
-          Authorisation link generated for <strong>{{ pending_bank }}</strong>.
-        </div>
-        <div style="margin-bottom:1.5rem;">
-          <label style="margin-top:0;">Step 1 — open your bank login page</label>
-          <a href="{{ auth_url }}" target="_blank" class="btn btn-primary" style="margin-top:0.75rem;">
-            Open bank authorisation →
-          </a>
-          <div style="font-size:12px; color:var(--muted); margin-top:0.6rem; line-height:1.5;">
-            Log in and approve read-only access. After approving, your browser redirects to klartion.com — copy the full URL and paste it below.
+        <div style="text-align:center; padding:0.5rem 0 1rem;">
+          <div id="spinner" style="display:none; width:36px; height:36px; border:2px solid var(--border); border-top-color:var(--text); border-radius:50%; animation:spin 0.7s linear infinite; margin:0 auto 1rem;"></div>
+          <div id="waiting-msg" style="display:none; font-size:14px; color:var(--muted); margin-bottom:1rem;">Waiting for approval — complete the steps in your browser...</div>
+          <div id="pre-msg">
+            <div style="font-size:15px; font-weight:600; margin-bottom:0.5rem; font-family:var(--serif);">Authorise {{ pending_bank }}</div>
+            <div style="font-size:13px; color:var(--muted); margin-bottom:1.5rem; line-height:1.6;">
+              Click the button below to open your bank login page.<br>
+              After approving, you will be returned here automatically.
+            </div>
           </div>
         </div>
-        <form method="POST">
-          <input type="hidden" name="action" value="confirm">
-          <label>Step 2 — paste the redirect URL here</label>
-          <input type="text" name="redirect_url" placeholder="https://klartion.com/?state=klartion-auth&code=..." autocomplete="off">
-          <button type="submit" class="btn btn-primary" style="margin-top:1rem; background:#37996b;">
-            Confirm connection →
-          </button>
-        </form>
+        <a href="{{ auth_url }}" target="_blank" class="btn btn-primary" onclick="startSpinner()">
+          Open {{ pending_bank }} login →
+        </a>
         <form method="POST" style="margin-top:0.75rem;">
           <input type="hidden" name="action" value="cancel">
-          <button type="submit" class="btn btn-secondary" style="margin-top:0;">Cancel and start over</button>
+          <button type="submit" class="btn btn-secondary" style="margin-top:0;">Cancel</button>
         </form>
+        <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
 
       {% else %}
         <form method="POST" id="connect-form">
@@ -190,6 +185,16 @@
     });
 
     loadBanks();
+
+    function startSpinner() {
+      setTimeout(() => {
+        document.getElementById('pre-msg').style.display = 'none';
+        document.getElementById('spinner').style.display = 'block';
+        document.getElementById('waiting-msg').style.display = 'block';
+      }, 500);
+    }
+
+
   </script>
 </body>
 </html>
