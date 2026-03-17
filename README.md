@@ -4,7 +4,7 @@
 
 Klartion connects to your EU bank via open banking and writes your transactions into a Notion database every day. It runs on your own machine — your financial data never touches any third-party server.
 
-→ **[klartion.com](https://klartion.com)** · [Buy a licence](https://david-alves.lemonsqueezy.com/checkout/buy/f24a36ac-3c66-4aaf-b272-9cce226a0ebf)
+→ **[klartion.com](https://klartion.com)** · [Buy a licence](https://klartion.com)
 
 ---
 
