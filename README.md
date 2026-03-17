@@ -66,7 +66,7 @@ curl -O https://raw.githubusercontent.com/DAdjadj/klartion/main/docker-compose.y
 
 **On your local machine**, upload the private key to your server. The filename matches your Enable Banking Application ID:
 ```bash
-scp ~/Downloads/your-app-id.pem user@your-server:~/klartion/data/eb_private.key
+scp ~/Downloads/your-app-id.pem user@your-server:~/klartion/data/your-app-id.pem
 ```
 
 Also update `EB_APP_ID` in your `.env` file to match your Application ID (the filename without `.pem`).
