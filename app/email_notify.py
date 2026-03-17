@@ -43,7 +43,7 @@ def send_failure(error: str):
         body=(
             f"Your daily Klartion sync failed with the following error:\n\n"
             f"{error}\n\n"
-            f"Please check your configuration at http://localhost:3000\n\n"
+            f"Please check your configuration at {config.KLARTION_URL}\n\n"
             f"-- Klartion"
         ),
     )
@@ -53,7 +53,7 @@ def send_token_expiry_warning(bank_name: str, days_left: int):
         subject=f"Klartion: your {bank_name} connection expires in {days_left} days",
         body=(
             f"Your Enable Banking connection to {bank_name} will expire in {days_left} days.\n\n"
-            f"Please reconnect at http://localhost:3000 to avoid sync interruptions.\n\n"
+            f"Please reconnect at {config.KLARTION_URL} to avoid sync interruptions.\n\n"
             f"-- Klartion"
         ),
     )
