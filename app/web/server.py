@@ -215,12 +215,9 @@ def status():
     last_sync = db.get_last_sync()
 
     licence_sync_failed = False
-    instance_id = db.get_setting("licence_instance_id")
-    if syncs and not instance_id:
-        last = syncs[0]
-        msg = (last.get("message") or "").lower()
-        if last.get("status") == "failure" and ("licence" in msg or "license" in msg):
-            licence_sync_failed = True
+    val = licence.validate()
+    if not val.get("valid") and not val.get("offline"):
+        licence_sync_failed = True
 
     activation_usage = 0
     activation_limit = 2
