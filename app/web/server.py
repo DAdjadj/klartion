@@ -196,6 +196,12 @@ def callback():
 
 @app.route("/status")
 def status():
+    # Revalidate licence on every status page load
+    try:
+        from .. import licence as _lic
+        _lic.validate()
+    except Exception:
+        pass
     if not _is_configured():
         return redirect(url_for("setup_licence"))
     if not _is_connected():
