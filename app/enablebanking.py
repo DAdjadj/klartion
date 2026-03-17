@@ -1,4 +1,6 @@
+import glob
 import logging
+import os
 import time
 import uuid
 import requests
@@ -10,9 +12,26 @@ logger = logging.getLogger(__name__)
 
 EB_BASE = "https://api.enablebanking.com"
 
+def _get_app_id():
+    """Extract app ID from UUID-named .pem file in /app/data/"""
+    if config.EB_APP_ID:
+        return config.EB_APP_ID
+    for f in glob.glob("/app/data/*.pem"):
+        name = os.path.splitext(os.path.basename(f))[0]
+        if len(name) == 36:
+            config.set("EB_APP_ID", name)
+            return name
+    raise RuntimeError("Could not determine Enable Banking App ID. Make sure your .pem file is named with your Application ID (e.g. aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.pem) and placed in the data/ folder.")
+
 def _make_jwt():
     import jwt as pyjwt
-    key_data = open(config.EB_PRIVATE_KEY_PATH, "rb").read()
+    # Find the key file - either the default path or a UUID-named .pem
+    key_path = config.EB_PRIVATE_KEY_PATH
+    if not os.path.exists(key_path):
+        for f in glob.glob("/app/data/*.pem"):
+            key_path = f
+            break
+    key_data = open(key_path, "rb").read()
     private_key = load_pem_private_key(key_data, password=None)
     now = int(time.time())
     payload = {
@@ -21,9 +40,9 @@ def _make_jwt():
         "iat": now,
         "exp": now + 3600,
         "jti": str(uuid.uuid4()),
-        "sub": config.EB_APP_ID,
+        "sub": _get_app_id(),
     }
-    return pyjwt.encode(payload, private_key, algorithm="RS256", headers={"kid": config.EB_APP_ID})
+    return pyjwt.encode(payload, private_key, algorithm="RS256", headers={"kid": _get_app_id()})
 
 def _headers():
     return {
