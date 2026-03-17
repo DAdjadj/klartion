@@ -221,18 +221,16 @@ def status():
     try:
         import requests as _requests
         key = _cfg().LICENCE_KEY
-        inst_id = db.get_setting("licence_instance_id")
-        if key and inst_id:
+        if key:
             resp = _requests.post(
-                "https://api.lemonsqueezy.com/v1/licenses/validate",
-                json={"license_key": key, "instance_id": inst_id},
+                "https://api.klartion.com/info",
+                json={"license_key": key},
                 timeout=5
             )
             if resp.status_code == 200:
-                ldata = resp.json()
-                lk = ldata.get("license_key", {})
-                activation_usage = lk.get("activation_usage", 0)
-                activation_limit = lk.get("activation_limit", 2)
+                data = resp.json()
+                activation_usage = data.get("activation_usage", 0)
+                activation_limit = data.get("activation_limit", 2)
     except Exception:
         pass
 
