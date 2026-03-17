@@ -17,7 +17,6 @@
     <div class="steps">
       <div class="step done"></div>
       <div class="step done"></div>
-      <div class="step done"></div>
       <div class="step active"></div>
     </div>
 
@@ -48,6 +47,7 @@
         </div>
         <button class="btn btn-ghost" id="sync-btn" onclick="runSync()">Sync now</button>
       </div>
+
       <div class="stat-row">
         <span class="stat-label">Bank</span>
         <span class="stat-value" style="display:flex; align-items:center; gap:8px;">
@@ -69,28 +69,16 @@
       </div>
       {% if days_left is not none %}
       <div class="stat-row">
-        <span class="stat-label">Session expiry</span>
+        <span class="stat-label">Token expiry</span>
         <span class="stat-value" style="color:{% if days_left <= 14 %}var(--warn){% else %}var(--success){% endif %};">
           {{ days_left }} day{{ 's' if days_left != 1 else '' }} remaining
         </span>
-      </div>
-      <div style="margin-top:0.75rem; display:flex; justify-content:flex-end;">
-        <form method="POST" action="/connect/reauthorise" style="display:inline;">
-          <input type="hidden" name="bank_name" value="{{ tokens.bank_name }}">
-          <input type="hidden" name="bank_country" value="{{ tokens.bank_country }}">
-          <button type="submit" class="btn btn-ghost" style="font-size:12px;">Re-authorise bank →</button>
-        </form>
       </div>
       {% endif %}
     </div>
 
     <div class="card">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
-        <div class="card-title" style="font-size:16px; margin-bottom:0;">Sync log</div>
-        <form method="POST" action="/sync/clear" onsubmit="return confirm('Clear all sync logs?');">
-          <button type="submit" class="btn btn-ghost" style="font-size:12px;">Clear log</button>
-        </form>
-      </div>
+      <div class="card-title" style="font-size:16px; margin-bottom:1rem;">Sync log</div>
       {% if syncs %}
         <table class="log-table">
           <thead>
@@ -107,18 +95,11 @@
               <td>{{ s.ran_at }}</td>
               <td><span class="badge {% if s.status == 'success' %}badge-success{% else %}badge-fail{% endif %}">{{ s.status }}</span></td>
               <td>{{ s.tx_count }}</td>
-              <td style="max-width:160px; word-break:break-word; white-space:normal; line-height:1.4; font-size:11px;">{{ s.message | striptags if s.message else '—' }}</td>
+              <td style="max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="{{ s.message }}">{{ s.message or '—' }}</td>
             </tr>
             {% endfor %}
           </tbody>
         </table>
-        {% if total_pages > 1 %}
-        <div style="display:flex; justify-content:center; align-items:center; gap:0.5rem; margin-top:1rem;">
-          {% if page > 1 %}<a href="?page={{ page - 1 }}" class="btn btn-ghost" style="font-size:12px; padding:4px 12px;">←</a>{% endif %}
-          <span style="font-size:12px; color:var(--muted);">{{ page }} / {{ total_pages }}</span>
-          {% if page < total_pages %}<a href="?page={{ page + 1 }}" class="btn btn-ghost" style="font-size:12px; padding:4px 12px;">→</a>{% endif %}
-        </div>
-        {% endif %}
       {% else %}
         <div style="color:var(--muted); font-size:13px; text-align:center; padding:2rem 0; line-height:1.6;">
           No syncs yet.<br>Click "Sync now" above or wait for the scheduled run at {{ sync_time }}.
@@ -137,7 +118,7 @@
         <span style="font-size:11px; color:var(--muted); margin-left:0.5rem;">No license? <a href="https://david-alves.lemonsqueezy.com/checkout/buy/f24a36ac-3c66-4aaf-b272-9cce226a0ebf" target="_blank" style="color:var(--muted);">Buy one →</a></span>
       </div>
       {% endif %}
-      <a href="/connect" class="btn btn-ghost" style="display:inline-flex; align-items:center; gap:6px;">← Bank</a>
+      <a href="/connect" class="btn btn-ghost">Manage connection</a>
     </div>
 
     <nav class="footer-nav">
@@ -152,10 +133,11 @@
   <script>
     async function runSync() {
       const btn = document.getElementById('sync-btn');
-      btn.textContent = 'Syncing...';
+      btn.textContent = 'Running…';
       btn.disabled = true;
       try {
         await fetch('/sync/now', { method: 'POST' });
+        btn.textContent = 'Started';
         setTimeout(() => location.reload(), 8000);
       } catch(e) {
         btn.textContent = 'Error — try again';
@@ -163,12 +145,11 @@
       }
     }
   </script>
-
-  <footer class="app-footer">
-    <a href="mailto:support@david-alves.com">Support</a>
-    <a href="https://klartion.com/privacy" target="_blank">Privacy</a>
-    <a href="https://klartion.com/terms" target="_blank">Terms</a>
-    <a href="https://github.com/DAdjadj/klartion" target="_blank">GitHub</a>
-  </footer>
+    <footer class="app-footer">
+      <a href="mailto:support@david-alves.com">Support</a>
+      <a href="https://klartion.com/privacy" target="_blank">Privacy</a>
+      <a href="https://klartion.com/terms" target="_blank">Terms</a>
+      <a href="https://github.com/DAdjadj/klartion" target="_blank">GitHub</a>
+    </footer>
 </body>
 </html>

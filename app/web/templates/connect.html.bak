@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Klartion — Bank</title>
+  <title>Klartion — Connect bank</title>
   <link rel="stylesheet" href="/static/style.css">
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 </head>
@@ -16,18 +16,18 @@
 
     <div class="steps">
       <div class="step done"></div>
-      <div class="step done"></div>
-      <div class="step done"></div>
-      <div class="step {% if tokens %}done{% else %}active{% endif %}"></div>
+      <div class="step active"></div>
+      <div class="step"></div>
     </div>
 
     <div class="card">
-      <div class="card-title">Bank</div>
-      <div class="card-sub">Step 4 of 4 — authorise read-only access via Enable Banking</div>
+      <div class="card-title">Connect your bank</div>
+      <div class="card-sub">Step 2 of 3 — authorise read-only access via Enable Banking</div>
 
       {% if error %}
         <div class="alert alert-error">{{ error }}</div>
       {% endif %}
+
       {% if success %}
         <div class="alert alert-success">
           Bank connected. Your first sync runs at {{ sync_time }} — or trigger it manually from the status page.
@@ -59,7 +59,9 @@
             </div>
           </div>
         </div>
-        <a href="{{ auth_url }}" target="_blank" class="btn btn-primary" onclick="startSpinner()">Open {{ pending_bank }} login →</a>
+        <a href="{{ auth_url }}" target="_blank" class="btn btn-primary" onclick="startSpinner()">
+          Open {{ pending_bank }} login →
+        </a>
         <form method="POST" style="margin-top:0.75rem;">
           <input type="hidden" name="action" value="cancel">
           <button type="submit" class="btn btn-secondary" style="margin-top:0;">Cancel</button>
@@ -71,17 +73,37 @@
           <input type="hidden" name="action" value="start">
           <input type="hidden" id="inp-bank-name" name="bank_name">
           <input type="hidden" id="inp-bank-country" name="bank_country">
+
           <label style="margin-top:0;">Search your bank</label>
           <div style="position:relative;">
-            <input type="text" id="bank-search" placeholder="Type to search 2,500+ European banks..." autocomplete="off" oninput="filterBanks(this.value)" onfocus="showDropdown()">
-            <div id="bank-dropdown" style="display:none; position:absolute; top:100%; left:0; right:0; background:#fff; border:1px solid var(--border); border-top:none; border-radius:0 0 6px 6px; max-height:220px; overflow-y:auto; z-index:100; box-shadow:0 4px 12px rgba(0,0,0,0.08);"></div>
+            <input
+              type="text"
+              id="bank-search"
+              placeholder="Type to search 2,500+ European banks..."
+              autocomplete="off"
+              oninput="filterBanks(this.value)"
+              onfocus="showDropdown()"
+            >
+            <div id="bank-dropdown" style="
+              display:none; position:absolute; top:100%; left:0; right:0;
+              background:#fff; border:1px solid var(--border); border-top:none;
+              border-radius:0 0 6px 6px; max-height:220px; overflow-y:auto;
+              z-index:100; box-shadow:0 4px 12px rgba(0,0,0,0.08);
+            "></div>
           </div>
+
           <div id="selected-bank" style="display:none; margin-top:0.75rem; padding:10px 12px; background:var(--surface); border:1px solid var(--border); border-radius:6px; font-size:13px; align-items:center; justify-content:space-between;">
             <span id="selected-label" style="font-weight:600;"></span>
             <button type="button" onclick="clearBank()" style="background:none; border:none; color:var(--muted); cursor:pointer; font-size:11px; padding:0;">clear</button>
           </div>
-          <div style="font-size:11px; color:var(--hint); margin-top:0.5rem;">Personal accounts only. 2,500+ banks across 29 European countries.</div>
-          <button class="btn btn-primary" type="submit" id="connect-btn" disabled>Authorise bank →</button>
+
+          <div style="font-size:11px; color:var(--hint); margin-top:0.5rem;">
+            Personal accounts only. 2,500+ banks across 29 European countries.
+          </div>
+
+          <button class="btn btn-primary" type="submit" id="connect-btn" disabled>
+            Generate bank link →
+          </button>
         </form>
       {% endif %}
     </div>
@@ -103,34 +125,56 @@
 
   <script>
     let allBanks = [];
+
     async function loadBanks() {
       try {
         const resp = await fetch('/banks');
         allBanks = await resp.json();
         const q = document.getElementById('bank-search');
         if (q && q.value.trim()) filterBanks(q.value);
-      } catch(e) { console.error('Failed to load banks', e); }
+      } catch(e) {
+        console.error('Failed to load banks', e);
+      }
     }
+
     function filterBanks(query) {
       if (!allBanks.length) loadBanks();
       const dd = document.getElementById('bank-dropdown');
       if (!query.trim()) { dd.style.display = 'none'; return; }
       const q = query.toLowerCase();
-      const matches = allBanks.filter(b => b.name.toLowerCase().includes(q) || b.country.toLowerCase().includes(q)).slice(0, 40);
+      const matches = allBanks.filter(b =>
+        b.name.toLowerCase().includes(q) || b.country.toLowerCase().includes(q)
+      ).slice(0, 40);
       if (!matches.length) { dd.style.display = 'none'; return; }
-      dd.innerHTML = matches.map(b => `<div onclick="selectBank('${b.name.replace(/'/g, "\\'")}','${b.country}')" style="padding:9px 12px; cursor:pointer; font-size:13px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #f0efeb;" onmouseover="this.style.background='#f7f6f3'" onmouseout="this.style.background=''"><span>${b.name}</span><span style="font-size:11px; color:#9ca3af; font-family:monospace;">${b.country}</span></div>`).join('');
+      dd.innerHTML = matches.map(b => `
+        <div onclick="selectBank('${b.name.replace(/'/g, "\\'")}','${b.country}')" style="
+          padding:9px 12px; cursor:pointer; font-size:13px;
+          display:flex; justify-content:space-between; align-items:center;
+          border-bottom:1px solid #f0efeb;
+        " onmouseover="this.style.background='#f7f6f3'" onmouseout="this.style.background=''">
+          <span>${b.name}</span>
+          <span style="font-size:11px; color:#9ca3af; font-family:monospace;">${b.country}</span>
+        </div>
+      `).join('');
       dd.style.display = 'block';
     }
-    function showDropdown() { const q = document.getElementById('bank-search').value; if (q.trim()) filterBanks(q); }
+
+    function showDropdown() {
+      const q = document.getElementById('bank-search').value;
+      if (q.trim()) filterBanks(q);
+    }
+
     function selectBank(name, country) {
       document.getElementById('inp-bank-name').value = name;
       document.getElementById('inp-bank-country').value = country;
       document.getElementById('bank-search').value = '';
       document.getElementById('bank-dropdown').style.display = 'none';
+      const sel = document.getElementById('selected-bank');
       document.getElementById('selected-label').textContent = name + ' (' + country + ')';
-      document.getElementById('selected-bank').style.display = 'flex';
+      sel.style.display = 'flex';
       document.getElementById('connect-btn').disabled = false;
     }
+
     function clearBank() {
       document.getElementById('inp-bank-name').value = '';
       document.getElementById('inp-bank-country').value = '';
@@ -138,11 +182,16 @@
       document.getElementById('selected-bank').style.display = 'none';
       document.getElementById('connect-btn').disabled = true;
     }
+
     document.addEventListener('click', function(e) {
       const dd = document.getElementById('bank-dropdown');
-      if (dd && !dd.contains(e.target) && e.target.id !== 'bank-search') dd.style.display = 'none';
+      if (dd && !dd.contains(e.target) && e.target.id !== 'bank-search') {
+        dd.style.display = 'none';
+      }
     });
+
     loadBanks();
+
     function startSpinner() {
       setTimeout(() => {
         document.getElementById('pre-msg').style.display = 'none';
@@ -150,13 +199,14 @@
         document.getElementById('waiting-msg').style.display = 'block';
       }, 500);
     }
-  </script>
 
-  <footer class="app-footer">
-    <a href="mailto:support@david-alves.com">Support</a>
-    <a href="https://klartion.com/privacy" target="_blank">Privacy</a>
-    <a href="https://klartion.com/terms" target="_blank">Terms</a>
-    <a href="https://github.com/DAdjadj/klartion" target="_blank">GitHub</a>
-  </footer>
+
+  </script>
+    <footer class="app-footer">
+      <a href="mailto:support@david-alves.com">Support</a>
+      <a href="https://klartion.com/privacy" target="_blank">Privacy</a>
+      <a href="https://klartion.com/terms" target="_blank">Terms</a>
+      <a href="https://github.com/DAdjadj/klartion" target="_blank">GitHub</a>
+    </footer>
 </body>
 </html>

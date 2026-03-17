@@ -22,6 +22,10 @@ def _is_configured():
 def _is_connected():
     return db.get_tokens() is not None
 
+# ---------------------------------------------------------------------------
+# Root
+# ---------------------------------------------------------------------------
+
 @app.route("/")
 def index():
     if not _is_configured():
@@ -29,6 +33,10 @@ def index():
     if not _is_connected():
         return redirect(url_for("connect"))
     return redirect(url_for("status"))
+
+# ---------------------------------------------------------------------------
+# Setup step 1: Licence
+# ---------------------------------------------------------------------------
 
 @app.route("/setup", methods=["GET", "POST"])
 def setup_licence():
@@ -41,10 +49,15 @@ def setup_licence():
         else:
             _cfg().set("LICENCE_KEY", key)
             return redirect(url_for("setup_notion"))
+
     return render_template("setup_licence.html",
         error=error,
         licence_key=_cfg().LICENCE_KEY,
     )
+
+# ---------------------------------------------------------------------------
+# Setup step 2: Notion
+# ---------------------------------------------------------------------------
 
 @app.route("/setup/notion", methods=["GET", "POST"])
 def setup_notion():
@@ -55,6 +68,7 @@ def setup_notion():
         if not api_key or not db_id:
             error = "Both fields are required."
         else:
+            # Verify the Notion connection
             try:
                 from ..notion import verify_database
                 _cfg().set("NOTION_API_KEY", api_key)
@@ -73,6 +87,10 @@ def setup_notion():
         notion_database_id=_cfg().NOTION_DATABASE_ID,
     )
 
+# ---------------------------------------------------------------------------
+# Setup step 3: Notifications
+# ---------------------------------------------------------------------------
+
 @app.route("/setup/notifications", methods=["GET", "POST"])
 def setup_notifications():
     error = None
@@ -90,8 +108,10 @@ def setup_notifications():
             _cfg().set("SYNC_TIME",      sync_time)
             _cfg().set("SMTP_USER",      smtp_user)
             _cfg().set("SMTP_PASSWORD",  smtp_pass)
+            # Start scheduler now that we have full config
             _start_scheduler_if_ready()
             return redirect(url_for("connect"))
+
     return render_template("setup_notifications.html",
         error=error,
         klartion_url=_cfg().KLARTION_URL,
@@ -100,6 +120,10 @@ def setup_notifications():
         smtp_user=_cfg().SMTP_USER,
         smtp_password=_cfg().SMTP_PASSWORD,
     )
+
+# ---------------------------------------------------------------------------
+# Licence deactivate
+# ---------------------------------------------------------------------------
 
 @app.route("/settings/deactivate", methods=["POST"])
 def deactivate_licence():
@@ -110,11 +134,20 @@ def deactivate_licence():
         return redirect(url_for("setup_licence") + "?msg=deactivated")
     return redirect(url_for("status") + "?error=" + (result["error"] or "Deactivation failed."))
 
+# ---------------------------------------------------------------------------
+# Detect URL helper
+# ---------------------------------------------------------------------------
+
 @app.route("/api/detect-url")
 def detect_url():
+    from flask import jsonify
     scheme = request.headers.get("X-Forwarded-Proto", request.scheme)
     host   = request.headers.get("X-Forwarded-Host", request.host)
     return jsonify({"url": f"{scheme}://{host}"})
+
+# ---------------------------------------------------------------------------
+# Connect (step 4 / bank OAuth)
+# ---------------------------------------------------------------------------
 
 @app.route("/connect", methods=["GET", "POST"])
 def connect():
@@ -124,6 +157,7 @@ def connect():
 
     if request.method == "POST":
         action = request.form.get("action")
+
         if action == "start":
             bank_name    = request.form.get("bank_name", "").strip()
             bank_country = request.form.get("bank_country", "").strip()
@@ -137,6 +171,7 @@ def connect():
                 except Exception as e:
                     logger.error("Failed to start auth: %s", e)
                     error = f"Could not start bank connection: {e}"
+
         elif action == "cancel":
             db.set_setting("pending_session_id", "")
             db.set_setting("pending_bank_name", "")
@@ -145,6 +180,7 @@ def connect():
 
     tokens  = db.get_tokens()
     success = request.args.get("success")
+
     return render_template("connect.html",
         error=error,
         success=success,
@@ -154,26 +190,9 @@ def connect():
         sync_time=_cfg().SYNC_TIME,
     )
 
-@app.route("/connect/reauthorise", methods=["POST"])
-def reauthorise():
-    bank_name    = request.form.get("bank_name", "").strip()
-    bank_country = request.form.get("bank_country", "").strip()
-    if not bank_name or not bank_country:
-        return redirect(url_for("connect"))
-    try:
-        result   = enablebanking.start_auth(bank_name, bank_country)
-        auth_url = result["url"]
-    except Exception as e:
-        logger.error("Failed to start reauth: %s", e)
-        return redirect(url_for("connect") + f"?error=Could not start re-authorisation: {e}")
-    return render_template("connect.html",
-        error=None,
-        success=None,
-        auth_url=auth_url,
-        tokens=db.get_tokens(),
-        pending_bank=bank_name,
-        sync_time=_cfg().SYNC_TIME,
-    )
+# ---------------------------------------------------------------------------
+# OAuth callback
+# ---------------------------------------------------------------------------
 
 @app.route("/callback")
 def callback():
@@ -194,6 +213,10 @@ def callback():
         logger.error("Callback auth failed: %s", e)
         return render_template("callback_redirect.html", target=url_for("connect") + "?error=" + str(e))
 
+# ---------------------------------------------------------------------------
+# Status
+# ---------------------------------------------------------------------------
+
 @app.route("/status")
 def status():
     if not _is_configured():
@@ -202,12 +225,11 @@ def status():
         return redirect(url_for("connect"))
 
     tokens    = db.get_tokens()
-    page      = request.args.get("page", 1, type=int)
-    log_data  = db.get_sync_log_page(page=page, per_page=5)
-    syncs     = log_data["syncs"]
+    syncs     = db.get_recent_syncs(limit=15)
     days_left = enablebanking.check_token_expiry()
     last_sync = db.get_last_sync()
 
+    # Check if last sync failed due to licence issue AND no active instance
     licence_sync_failed = False
     instance_id = db.get_setting("licence_instance_id")
     if syncs and not instance_id:
@@ -215,17 +237,16 @@ def status():
         msg = (last.get("message") or "").lower()
         if last.get("status") == "failure" and ("licence" in msg or "license" in msg):
             licence_sync_failed = True
-
     activation_usage = 0
     activation_limit = 2
     try:
         import requests as _requests
         key = _cfg().LICENCE_KEY
-        inst_id = db.get_setting("licence_instance_id")
-        if key and inst_id:
+        instance_id = db.get_setting("licence_instance_id")
+        if key and instance_id:
             resp = _requests.post(
                 "https://api.lemonsqueezy.com/v1/licenses/validate",
-                json={"license_key": key, "instance_id": inst_id},
+                json={"license_key": key, "instance_id": instance_id},
                 timeout=5
             )
             if resp.status_code == 200:
@@ -247,8 +268,6 @@ def status():
         activation_limit=activation_limit,
         licence_sync_failed=licence_sync_failed,
         licence_limit_reached=(licence_sync_failed and activation_usage >= activation_limit and activation_limit > 0),
-        page=log_data["page"],
-        total_pages=log_data["total_pages"],
     )
 
 @app.route("/sync/now", methods=["POST"])
@@ -257,17 +276,10 @@ def sync_now():
     threading.Thread(target=sync.run, daemon=True).start()
     return jsonify({"ok": True})
 
-@app.route("/sync/clear", methods=["POST"])
-def clear_sync_log():
-    db.clear_sync_log()
-    return redirect(url_for("status"))
-
 @app.route("/disconnect", methods=["POST"])
 def disconnect():
     db.clear_tokens()
     return redirect(url_for("connect"))
-
-_banks_cache = None
 
 @app.route("/banks")
 def banks():
@@ -279,6 +291,12 @@ def banks():
             logger.error("Failed to fetch banks: %s", e)
             return jsonify([])
     return jsonify(_banks_cache)
+
+_banks_cache = None
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def _start_scheduler_if_ready():
     if _is_configured():

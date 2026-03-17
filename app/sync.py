@@ -59,7 +59,11 @@ def run():
     try:
         all_transactions = enablebanking.get_transactions(session_id, account_uid, date_from, date_to)
     except Exception as e:
-        msg = f"Failed to fetch transactions from Enable Banking: {e}"
+        err = str(e)
+        # Strip verbose HTTP URLs from error messages, keep the status line only
+        import re
+        err = re.sub(r" for url: https?://\S+", "", err)
+        msg = f"Failed to fetch transactions: {err}"
         logger.error(msg)
         db.log_sync("failure", message=msg)
         email_notify.send_failure(msg)

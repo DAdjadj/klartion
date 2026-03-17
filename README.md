@@ -32,6 +32,8 @@ Klartion connects to your EU bank via open banking and writes your transactions 
 
 ## Quick start
 
+> **New to self-hosting?** Follow the step-by-step guide at [klartion.com/getting-started](https://klartion.com/getting-started.html) — it walks you through everything from Enable Banking setup to running your first sync.
+
 ### 1. Get your licence key
 
 Purchase at [klartion.com](https://klartion.com). Your key is delivered to your email instantly.
@@ -41,32 +43,40 @@ Purchase at [klartion.com](https://klartion.com). Your key is delivered to your 
 Enable Banking is the regulated open banking provider that connects Klartion to your bank.
 
 1. Sign up at [enablebanking.com](https://enablebanking.com)
-2. Go to **API applications** and create a new application — name it `Klartion`
-3. Set the redirect URL to `https://klartion.com/callback`
-4. Under **Keys**, select **Generate in the browser** and download your private key (`.pem` file)
-5. Note your **App ID** from the application dashboard
-6. Click **Link accounts** and link your bank — this activates restricted mode (free, no expiry)
+2. Go to **API applications** and click **Register new application**
+3. Fill in the form:
+   - **Application name:** Klartion
+   - **Allowed redirect URLs:** `https://klartion.com/callback`
+   - **Application description:** Connect my bank to Notion
+   - **Email for data protection matters:** your email address
+   - **Privacy URL:** `https://klartion.com/privacy`
+   - **Terms URL:** `https://klartion.com/terms`
+4. Click **Register** — a `.pem` file will be saved to your Downloads folder. The filename matches your Application ID (e.g. `aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.pem`). Keep it safe.
+5. Click **Activate by linking accounts** on your application page
+6. Select your country and bank from the dropdowns and click **Link**
+7. Follow the steps to log in to your bank and approve read-only access — this activates your Enable Banking app
 
 ### 3. Install Klartion
 
-Create a folder and download the compose file:
-
+**On your server**, create the folder and download the compose file:
 ```bash
-mkdir klartion && cd klartion
+mkdir -p ~/klartion/data && cd ~/klartion
 curl -O https://raw.githubusercontent.com/DAdjadj/klartion/main/docker-compose.yml
-mkdir -p data
-cp /path/to/your/downloaded.pem data/eb_private.key
 ```
 
-Start the container:
+**On your local machine**, upload the private key to your server. The filename matches your Enable Banking Application ID:
+```bash
+scp ~/Downloads/your-app-id.pem user@your-server:~/klartion/data/eb_private.key
+```
 
+Also update `EB_APP_ID` in your `.env` file to match your Application ID (the filename without `.pem`).
+
+**Back on your server**, start the container:
 ```bash
 docker compose up -d
 ```
 
-Open **http://your-server-address:3001** in your browser. The setup wizard will guide you through the rest — licence key, Notion connection, notifications, and bank OAuth. No manual config file editing required.
-
-> **Tip:** If you use iCloud Private Relay, your browser may ask to reveal your IP address when accessing a local address. This is expected — click **Continue**.
+Open **http://your-server-address:3001** in your browser. The setup wizard will guide you through the rest.
 
 ---
 
@@ -83,8 +93,15 @@ Once complete, Klartion runs silently in the background.
 
 ---
 
-## How it works
+## Session renewal (every ~180 days)
 
+Enable Banking requires you to re-authorise access roughly every 6 months. If you configured email notifications, you will receive a warning before expiry.
+
+To re-authorise, go to the **Status** page in the Klartion web UI and click **Re-authorise bank**.
+
+---
+
+## How it works
 ```
 Your bank
    ↓  (read-only OAuth, Enable Banking)
@@ -125,9 +142,8 @@ The [Klartion template](https://hilarious-mirror-513.notion.site/4f95e8e7b23183c
 ---
 
 ## Updating
-
 ```bash
-docker compose pull && docker compose up -d --build
+docker compose pull && docker compose up -d
 ```
 
 ---

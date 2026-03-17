@@ -143,3 +143,28 @@ def get_setting(key, default=None):
     row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
     conn.close()
     return row["value"] if row else default
+
+
+def get_sync_log_page(page=1, per_page=5, user_id="default"):
+    conn = get_conn()
+    offset = (page - 1) * per_page
+    total = conn.execute(
+        "SELECT COUNT(*) FROM sync_log WHERE user_id = ?", (user_id,)
+    ).fetchone()[0]
+    rows = conn.execute(
+        "SELECT * FROM sync_log WHERE user_id = ? ORDER BY ran_at DESC LIMIT ? OFFSET ?",
+        (user_id, per_page, offset)
+    ).fetchall()
+    conn.close()
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    return {
+        "syncs": [dict(r) for r in rows],
+        "page": page,
+        "total_pages": total_pages,
+    }
+
+def clear_sync_log(user_id="default"):
+    conn = get_conn()
+    conn.execute("DELETE FROM sync_log WHERE user_id = ?", (user_id,))
+    conn.commit()
+    conn.close()

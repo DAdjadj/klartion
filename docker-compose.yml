@@ -1,11 +1,14 @@
 services:
   klartion:
-    build: .
+    image: daalves/klartion:latest
     container_name: klartion
     restart: unless-stopped
     ports:
       - "3001:3000"
     volumes:
       - ./data:/app/data
+      - ./app:/app/app
     env_file:
       - .env
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
