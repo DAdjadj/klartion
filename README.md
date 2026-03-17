@@ -69,7 +69,6 @@ curl -O https://raw.githubusercontent.com/DAdjadj/klartion/main/docker-compose.y
 scp ~/Downloads/your-app-id.pem user@your-server:~/klartion/data/your-app-id.pem
 ```
 
-Also update `EB_APP_ID` in your `.env` file to match your Application ID (the filename without `.pem`).
 
 **Back on your server**, start the container:
 ```bash
