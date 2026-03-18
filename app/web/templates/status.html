@@ -33,13 +33,6 @@
       {% endif %}
     {% endif %}
 
-    {% if days_left is not none and days_left <= 14 %}
-      <div class="alert alert-warn">
-        Your {{ tokens.bank_name }} connection expires in {{ days_left }} day{{ 's' if days_left != 1 else '' }}.
-        <a href="/connect" style="color:inherit; font-weight:600;"> Reconnect →</a>
-      </div>
-    {% endif %}
-
     <div class="card">
       <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1.5rem;">
         <div>
@@ -48,14 +41,31 @@
         </div>
         <button class="btn btn-ghost" id="sync-btn" onclick="runSync()">Sync now</button>
       </div>
-      <div class="stat-row">
-        <span class="stat-label">Bank</span>
-        <span class="stat-value" style="display:flex; align-items:center; gap:8px;">
-          {{ tokens.bank_name }} ({{ tokens.bank_country }})
-          <span class="connected-pill">Connected</span>
-        </span>
+      {% for t in all_tokens %}
+      <div style="{% if not loop.first %}margin-top:1rem; padding-top:1rem; border-top:1px solid var(--border);{% endif %}">
+        <div class="stat-row">
+          <span class="stat-label">Bank</span>
+          <span class="stat-value" style="display:flex; align-items:center; gap:8px;">
+            {{ t.bank_name }} ({{ t.bank_country }})
+            <span class="connected-pill">Connected</span>
+          </span>
+        </div>
+        {% if t.expires_at %}
+        <div class="stat-row">
+          <span class="stat-label">Session</span>
+          <span class="stat-value" style="display:flex; align-items:center; gap:10px;">
+            {{ t.expires_at[:10] }}
+            <form method="POST" action="/connect/reauthorise" style="display:inline;">
+              <input type="hidden" name="bank_name" value="{{ t.bank_name }}">
+              <input type="hidden" name="bank_country" value="{{ t.bank_country }}">
+              <button type="submit" class="btn btn-ghost" style="font-size:11px; padding:4px 10px;">Re-authorise</button>
+            </form>
+          </span>
+        </div>
+        {% endif %}
       </div>
-      <div class="stat-row">
+      {% endfor %}
+      <div class="stat-row" style="margin-top:1rem; padding-top:1rem; border-top:1px solid var(--border);">
         <span class="stat-label">Last sync</span>
         <span class="stat-value">{{ last_sync or 'Never' }}</span>
       </div>
@@ -67,19 +77,10 @@
         <span class="stat-label">Notifications</span>
         <span class="stat-value">{{ notify_email }}</span>
       </div>
-      {% if days_left is not none %}
-      <div class="stat-row">
-        <span class="stat-label">Session expiry</span>
-        <span class="stat-value" style="color:{% if days_left <= 14 %}var(--warn){% else %}var(--success){% endif %};">
-          {{ days_left }} day{{ 's' if days_left != 1 else '' }} remaining
-        </span>
-      </div>
-      <div style="margin-top:0.75rem; display:flex; justify-content:flex-end;">
-        <form method="POST" action="/connect/reauthorise" style="display:inline;">
-          <input type="hidden" name="bank_name" value="{{ tokens.bank_name }}">
-          <input type="hidden" name="bank_country" value="{{ tokens.bank_country }}">
-          <button type="submit" class="btn btn-ghost" style="font-size:12px;">Re-authorise bank →</button>
-        </form>
+      {% if days_left is not none and days_left <= 14 %}
+      <div class="alert alert-warn" style="margin-top:1rem;">
+        A bank connection expires in {{ days_left }} day{{ 's' if days_left != 1 else '' }}.
+        <a href="/connect" style="color:inherit; font-weight:600;"> Manage banks →</a>
       </div>
       {% endif %}
     </div>
@@ -153,12 +154,25 @@
     async function runSync() {
       const btn = document.getElementById('sync-btn');
       btn.textContent = 'Syncing...';
+      btn.style.opacity = '0.6';
       btn.disabled = true;
       try {
         await fetch('/sync/now', { method: 'POST' });
-        setTimeout(() => location.reload(), 8000);
+        // Poll until sync completes (new log entry appears)
+        var attempts = 0;
+        var poll = setInterval(function() {
+          attempts++;
+          if (attempts > 60) { clearInterval(poll); location.reload(); return; }
+          fetch('/api/last-sync').then(function(r) { return r.json(); }).then(function(d) {
+            if (d.ran_at && d.ran_at !== '{{ last_sync or "" }}') {
+              clearInterval(poll);
+              location.reload();
+            }
+          }).catch(function() {});
+        }, 2000);
       } catch(e) {
         btn.textContent = 'Error — try again';
+        btn.style.opacity = '1';
         btn.disabled = false;
       }
     }

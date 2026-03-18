@@ -12,6 +12,7 @@ Klartion connects to your EU bank via open banking and writes your transactions 
 
 - **Daily automatic sync** — transactions land in Notion once a day, at a time you choose
 - **2,500+ European banks** — Revolut, N26, Monzo, Wise, Millennium BCP, Santander, ING, BNP Paribas, and more across 29 countries
+- **Multiple bank accounts** — connect up to 2 bank accounts by default, with the option to add more
 - **Read-only, always** — Klartion can never move money or modify your account
 - **Pending transaction tracking** — pending transactions are imported and automatically updated to Cleared or Cancelled when they settle
 - **Duplicate detection** — Klartion tracks every transaction ID so nothing ever gets imported twice
@@ -86,9 +87,9 @@ The browser-based wizard walks you through four steps:
 1. **Licence** — enter your key to activate Klartion on this machine
 2. **Notion** — duplicate the [ready-made template](https://hilarious-mirror-513.notion.site/4f95e8e7b23183c3be5381bef1d906b2), create a free integration, and paste your credentials
 3. **Notifications** — set your email, SMTP credentials, and daily sync time
-4. **Bank** — connect your bank via Enable Banking OAuth (one-time, browser-based)
+4. **Bank** — connect your bank via Enable Banking OAuth (one-time, browser-based). You can connect up to 2 bank accounts by default. Each bank's transactions are tagged with the bank name in a "Bank" column in Notion.
 
-Once complete, Klartion runs silently in the background.
+Once complete, Klartion runs silently in the background. To add a second bank, go to the **Bank** tab and search for another bank. Need more than 2? You can purchase additional bank account slots from the status page.
 
 ---
 
@@ -137,6 +138,7 @@ The [Klartion template](https://hilarious-mirror-513.notion.site/4f95e8e7b23183c
 | Direction | Select | `in` or `out` |
 | Status | Select | `Cleared`, `Pending`, or `Cancelled` |
 | Transaction ID | Text | Enable Banking reference (deduplication key) |
+| Bank | Text | Bank name (e.g. Revolut, N26) |
 
 ---
 

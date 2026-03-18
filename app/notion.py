@@ -52,6 +52,9 @@ def write_transaction(tx: dict) -> str:
         "Transaction ID": {
             "rich_text": [{"text": {"content": tx.get("tx_id", "")}}]
         },
+        "Bank": {
+            "rich_text": [{"text": {"content": tx.get("bank_name", "")}}]
+        },
     }
 
     page = notion.pages.create(

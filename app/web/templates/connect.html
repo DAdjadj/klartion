@@ -34,20 +34,24 @@
         </div>
       {% endif %}
 
-      {% if tokens and not auth_url %}
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+      {% if all_tokens and not auth_url %}
+        {% for t in all_tokens %}
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; padding:12px 14px; background:var(--surface); border:1px solid var(--border); border-radius:8px;">
           <div>
             <div class="connected-pill">Connected</div>
             <div style="margin-top:8px; font-family:var(--mono); font-size:12px; color:var(--muted);">
-              {{ tokens.bank_name }} ({{ tokens.bank_country }})
+              {{ t.bank_name }} ({{ t.bank_country }})
             </div>
           </div>
           <form method="POST" action="/disconnect">
+            <input type="hidden" name="token_id" value="{{ t.id }}">
             <button type="submit" class="btn btn-danger-ghost">Disconnect</button>
           </form>
         </div>
+        {% endfor %}
+      {% endif %}
 
-      {% elif auth_url %}
+      {% if auth_url %}
         <div style="text-align:center; padding:0.5rem 0 1rem;">
           <div id="spinner" style="display:none; width:36px; height:36px; border:2px solid var(--border); border-top-color:var(--text); border-radius:50%; animation:spin 0.7s linear infinite; margin:0 auto 1rem;"></div>
           <div id="waiting-msg" style="display:none; font-size:14px; color:var(--muted); margin-bottom:1rem;">Waiting for approval — complete the steps in your browser...</div>
@@ -65,8 +69,12 @@
           <button type="submit" class="btn btn-secondary" style="margin-top:0;">Cancel</button>
         </form>
 
-      {% else %}
-        {% if not pem_ready %}
+      {% elif not auth_url %}
+        {% if all_tokens|length >= bank_account_limit %}
+        <div style="padding:14px; background:var(--surface); border:1px solid var(--border); border-radius:8px; font-size:13px; color:var(--muted); text-align:center;">
+          Bank account limit reached ({{ all_tokens|length }}/{{ bank_account_limit }}). <a href="{{ bank_slot_url }}" target="_blank" style="color:var(--text); font-weight:600;">Add more →</a>
+        </div>
+        {% elif not pem_ready %}
         <div class="card-title">Upload your private key</div>
         <div class="card-sub">Step 4 of 4 — upload your Enable Banking private key file before connecting your bank.</div>
         <form method="POST" enctype="multipart/form-data">
@@ -115,7 +123,7 @@
       {% endif %}
     </div>
 
-    {% if tokens and not auth_url %}
+    {% if all_tokens and not auth_url %}
       <div style="text-align:center;">
         <a href="/status" class="btn btn-primary">Continue to status →</a>
       </div>

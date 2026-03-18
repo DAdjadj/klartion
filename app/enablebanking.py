@@ -171,12 +171,19 @@ def get_transactions(session_id: str, account_uid: str, date_from: str, date_to:
     return [t for t in all_txns if t.get("status") in ("BOOK", "booked", "PDNG", "pending")]
 
 def check_token_expiry():
-    tokens = db.get_tokens()
-    if not tokens or not tokens.get("expires_at"):
+    """Returns days until the soonest-expiring token, or None."""
+    all_tokens = db.get_all_tokens()
+    if not all_tokens:
         return None
-    try:
-        expires = datetime.fromisoformat(tokens["expires_at"].replace("Z", "+00:00"))
-        delta = expires - datetime.now(timezone.utc)
-        return max(0, delta.days)
-    except Exception:
-        return None
+    min_days = None
+    for tokens in all_tokens:
+        if not tokens.get("expires_at"):
+            continue
+        try:
+            expires = datetime.fromisoformat(tokens["expires_at"].replace("Z", "+00:00"))
+            days = max(0, (expires - datetime.now(timezone.utc)).days)
+            if min_days is None or days < min_days:
+                min_days = days
+        except Exception:
+            continue
+    return min_days

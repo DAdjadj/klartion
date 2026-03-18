@@ -20,85 +20,97 @@ def run():
         email_notify.send_failure(msg)
         return False, 0, msg
 
-    # 2. Load tokens
-    tokens = db.get_tokens()
-    if not tokens:
-        msg = "No bank connection found. Please connect your bank at http://localhost:3000"
+    # 2. Load all connected bank accounts
+    all_tokens = db.get_all_tokens()
+    if not all_tokens:
+        msg = "No bank connection found. Please connect your bank."
         logger.error(msg)
         db.log_sync("failure", message=msg)
         email_notify.send_failure(msg)
         return False, 0, msg
 
-    session_id = tokens["session_id"]
+    total_written = 0
+    errors = []
 
-    # 3. Check token expiry warning (14 days)
-    days_left = enablebanking.check_token_expiry()
-    if days_left is not None and days_left <= 14:
-        email_notify.send_token_expiry_warning(tokens.get("bank_name", "your bank"), days_left)
+    for tokens in all_tokens:
+        bank_label = f"{tokens.get('bank_name', 'Unknown')} ({tokens.get('bank_country', '')})"
+        session_id = tokens["session_id"]
+        account_uid = tokens.get("access_token")
 
-    # 4. Determine date range (last sync - 2 days buffer, or 30 days if first run)
-    last_sync = db.get_last_sync()
-    if last_sync:
-        date_from = (datetime.fromisoformat(last_sync) - timedelta(days=2)).strftime("%Y-%m-%d")
-    else:
-        date_from = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
-    date_to = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        # 3. Check token expiry warning (14 days)
+        if tokens.get("expires_at"):
+            try:
+                expires = datetime.fromisoformat(tokens["expires_at"].replace("Z", "+00:00"))
+                days_left = max(0, (expires - datetime.now(timezone.utc)).days)
+                if days_left <= 14:
+                    email_notify.send_token_expiry_warning(tokens.get("bank_name", "your bank"), days_left)
+            except Exception:
+                pass
 
-    logger.info("Fetching transactions from %s to %s", date_from, date_to)
+        if not account_uid:
+            errors.append(f"{bank_label}: No account UID found")
+            continue
 
-    # 5. Get account UID from stored tokens (set during OAuth)
-    account_uid = tokens.get("access_token")
-    if not account_uid:
-        msg = "No account UID found. Please reconnect your bank."
-        logger.error(msg)
-        db.log_sync("failure", message=msg)
-        email_notify.send_failure(msg)
-        return False, 0, msg
+        # 4. Determine date range
+        last_sync = db.get_last_sync()
+        if last_sync:
+            date_from = (datetime.fromisoformat(last_sync) - timedelta(days=2)).strftime("%Y-%m-%d")
+        else:
+            date_from = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
+        date_to = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    # 6. Fetch transactions directly by account UID
-    try:
-        all_transactions = enablebanking.get_transactions(session_id, account_uid, date_from, date_to)
-    except Exception as e:
-        err = str(e)
-        # Strip verbose HTTP URLs from error messages, keep the status line only
-        import re
-        err = re.sub(r" for url: https?://\S+", "", err)
-        msg = f"Failed to fetch transactions: {err}"
-        logger.error(msg)
-        db.log_sync("failure", message=msg)
-        email_notify.send_failure(msg)
-        return False, 0, msg
+        logger.info("Syncing %s: %s to %s", bank_label, date_from, date_to)
 
-    logger.info("Fetched %d transactions from Enable Banking", len(all_transactions))
-
-    # 7. Deduplicate against known transaction IDs
-    known_ids = db.get_known_tx_ids()
-    new_transactions = [t for t in all_transactions if _get_tx_id(t) not in known_ids]
-    logger.info("%d new transactions after deduplication", len(new_transactions))
-
-    # 8. Handle pending transaction updates
-    _reconcile_pending(all_transactions)
-
-    # 9. Write new transactions to Notion
-    written = 0
-    for tx in new_transactions:
+        # 5. Fetch transactions
         try:
-            normalised = _normalise(tx)
-            notion_page_id = notion.write_transaction(normalised)
-            db.upsert_transaction(
-                tx_id=normalised["tx_id"],
-                notion_page_id=notion_page_id,
-                status=normalised["status"],
-            )
-            written += 1
+            all_transactions = enablebanking.get_transactions(session_id, account_uid, date_from, date_to)
         except Exception as e:
-            logger.error("Failed to write transaction %s: %s", _get_tx_id(tx), e)
+            import re
+            err = re.sub(r" for url: https?://\S+", "", str(e))
+            errors.append(f"{bank_label}: {err}")
+            logger.error("Failed to fetch transactions for %s: %s", bank_label, err)
+            continue
 
-    # 10. Log and notify
-    db.log_sync("success", tx_count=written)
-    email_notify.send_success(written)
-    logger.info("Sync complete. %d transactions written.", written)
-    return True, written, "OK"
+        logger.info("Fetched %d transactions from %s", len(all_transactions), bank_label)
+
+        # 6. Deduplicate
+        known_ids = db.get_known_tx_ids()
+        new_transactions = [t for t in all_transactions if _get_tx_id(t) not in known_ids]
+        logger.info("%d new transactions after deduplication", len(new_transactions))
+
+        # 7. Reconcile pending
+        _reconcile_pending(all_transactions)
+
+        # 8. Write to Notion
+        written = 0
+        for tx in new_transactions:
+            try:
+                normalised = _normalise(tx)
+                normalised["bank_name"] = tokens.get("bank_name", "")
+                notion_page_id = notion.write_transaction(normalised)
+                db.upsert_transaction(
+                    tx_id=normalised["tx_id"],
+                    notion_page_id=notion_page_id,
+                    status=normalised["status"],
+                )
+                written += 1
+            except Exception as e:
+                logger.error("Failed to write transaction %s: %s", _get_tx_id(tx), e)
+
+        total_written += written
+        logger.info("Synced %d transactions from %s", written, bank_label)
+
+    # 9. Log and notify
+    if errors:
+        msg = f"{total_written} transactions written. Errors: {'; '.join(errors)}"
+        db.log_sync("partial" if total_written > 0 else "failure", tx_count=total_written, message=msg)
+        email_notify.send_failure(msg)
+    else:
+        db.log_sync("success", tx_count=total_written)
+        email_notify.send_success(total_written)
+
+    logger.info("Sync complete. %d transactions written.", total_written)
+    return len(errors) == 0, total_written, "OK"
 
 
 def _reconcile_pending(all_transactions: list):

@@ -68,9 +68,23 @@ def get_tokens(user_id="default"):
     conn.close()
     return dict(row) if row else None
 
+def get_all_tokens(user_id="default"):
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM tokens WHERE user_id = ? ORDER BY created_at ASC", (user_id,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
 def clear_tokens(user_id="default"):
     conn = get_conn()
     conn.execute("DELETE FROM tokens WHERE user_id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+
+def clear_token_by_id(token_id):
+    conn = get_conn()
+    conn.execute("DELETE FROM tokens WHERE id = ?", (token_id,))
     conn.commit()
     conn.close()
 
