@@ -59,19 +59,11 @@
             </div>
           </div>
         </div>
-        <a href="{{ auth_url }}" target="_blank" class="btn btn-primary" onclick="startSpinner()">Open {{ pending_bank }} login →</a>
+        <a href="{{ auth_url }}" class="btn btn-primary">Open {{ pending_bank }} login →</a>
         <form method="POST" style="margin-top:0.75rem;">
           <input type="hidden" name="action" value="cancel">
           <button type="submit" class="btn btn-secondary" style="margin-top:0;">Cancel</button>
         </form>
-        <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
-        <script>
-        var pollTimer = setInterval(function() {
-          fetch('/api/bank-status').then(function(r) { return r.json(); }).then(function(d) {
-            if (d.connected) { clearInterval(pollTimer); window.location.href = '/connect?success=1'; }
-          }).catch(function() {});
-        }, 3000);
-        </script>
 
       {% else %}
         {% if not pem_ready %}
