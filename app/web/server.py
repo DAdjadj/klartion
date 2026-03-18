@@ -81,6 +81,11 @@ def setup_notion():
     if request.method == "POST":
         api_key = request.form.get("notion_api_key", "").strip()
         db_id   = request.form.get("notion_database_id", "").strip()
+        # Extract database ID from full Notion URL if pasted
+        import re
+        m = re.search(r'([a-f0-9]{32})', db_id.replace('-', ''))
+        if m:
+            db_id = m.group(1)
         if not api_key or not db_id:
             error = "Both fields are required."
         else:
@@ -139,6 +144,10 @@ def deactivate_licence():
         return redirect(url_for("setup_licence") + "?msg=deactivated")
     return redirect(url_for("status") + "?error=" + (result["error"] or "Deactivation failed."))
 
+@app.route("/api/bank-status")
+def bank_status():
+    return jsonify({"connected": db.get_tokens() is not None})
+
 @app.route("/api/detect-url")
 def detect_url():
     scheme = request.headers.get("X-Forwarded-Proto", request.scheme)
@@ -153,7 +162,20 @@ def connect():
 
     if request.method == "POST":
         action = request.form.get("action")
-        if action == "start":
+        if action == "upload_pem":
+            import os
+            pem_file = request.files.get("pem_file")
+            app_id   = request.form.get("eb_app_id", "").strip()
+            if not pem_file or not pem_file.filename:
+                error = "Please select a .pem file."
+            elif not app_id:
+                error = "Application ID is required."
+            else:
+                pem_path = os.path.join("/app/data", f"{app_id}.pem")
+                pem_file.save(pem_path)
+                _cfg().set("EB_APP_ID", app_id)
+                return redirect(url_for("connect"))
+        elif action == "start":
             bank_name    = request.form.get("bank_name", "").strip()
             bank_country = request.form.get("bank_country", "").strip()
             if not bank_name or not bank_country:
@@ -172,8 +194,10 @@ def connect():
             db.set_setting("pending_bank_country", "")
             return redirect(url_for("connect"))
 
-    tokens  = db.get_tokens()
-    success = request.args.get("success")
+    import glob
+    tokens    = db.get_tokens()
+    success   = request.args.get("success")
+    pem_ready = bool(glob.glob("/app/data/*.pem"))
     return render_template("connect.html",
         error=error,
         success=success,
@@ -181,6 +205,8 @@ def connect():
         tokens=tokens,
         pending_bank=pending,
         sync_time=_cfg().SYNC_TIME,
+        pem_ready=pem_ready,
+        eb_app_id=_cfg().EB_APP_ID,
     )
 
 @app.route("/connect/reauthorise", methods=["POST"])
@@ -216,12 +242,12 @@ def callback():
     try:
         ok = enablebanking.complete_auth(code=code, state=state)
         if ok:
-            return render_template("callback_redirect.html", target=url_for("connect") + "?success=1")
+            return '<html><body><script>window.close();</script><p>Bank connected. You can close this tab.</p></body></html>'
         else:
-            return render_template("callback_redirect.html", target=url_for("connect") + "?error=auth_failed")
+            return redirect(url_for("connect") + "?error=auth_failed")
     except Exception as e:
         logger.error("Callback auth failed: %s", e)
-        return render_template("callback_redirect.html", target=url_for("connect") + "?error=" + str(e))
+        return redirect(url_for("connect") + "?error=" + str(e))
 
 @app.route("/status")
 def status():
@@ -291,6 +317,14 @@ def sync_now():
 def clear_sync_log():
     db.clear_sync_log()
     return redirect(url_for("status"))
+
+@app.route("/connect/reset-pem")
+def reset_pem():
+    import glob, os
+    for f in glob.glob("/app/data/*.pem"):
+        os.remove(f)
+    _cfg().set("EB_APP_ID", "")
+    return redirect(url_for("connect"))
 
 @app.route("/disconnect", methods=["POST"])
 def disconnect():

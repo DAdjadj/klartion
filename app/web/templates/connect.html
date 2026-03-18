@@ -65,8 +65,44 @@
           <button type="submit" class="btn btn-secondary" style="margin-top:0;">Cancel</button>
         </form>
         <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+        <script>
+        var pollTimer = setInterval(function() {
+          fetch('/api/bank-status').then(function(r) { return r.json(); }).then(function(d) {
+            if (d.connected) { clearInterval(pollTimer); window.location.href = '/connect?success=1'; }
+          }).catch(function() {});
+        }, 3000);
+        </script>
 
       {% else %}
+        {% if not pem_ready %}
+        <div class="card-title">Upload your private key</div>
+        <div class="card-sub">Step 4 of 4 — upload your Enable Banking private key file before connecting your bank.</div>
+        <form method="POST" enctype="multipart/form-data">
+          <input type="hidden" name="action" value="upload_pem">
+          <label style="margin-top:0;">Private key file (.pem)</label>
+          <input type="file" name="pem_file" id="pem-file-input" accept=".pem" required onchange="autoFillAppId(this)">
+          <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">The <code style="font-size:11px; color:var(--muted);">.pem</code> key file downloaded from Enable Banking. It stays on your server and is never shared.</div>
+          <label>Application ID <span style="font-size:11px; font-weight:400; color:var(--hint);">(auto-filled from filename)</span></label>
+          <input type="text" name="eb_app_id" id="eb-app-id-input" value="{{ eb_app_id }}" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" required>
+          <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">Filled automatically from your .pem filename. From your <a href="https://enablebanking.com/" target="_blank" style="color:var(--muted);">Enable Banking dashboard</a> under Applications.</div>
+          <script>
+          function autoFillAppId(input) {
+            if (!input.files || !input.files[0]) return;
+            var filename = input.files[0].name;
+            var appId = filename.replace(/\.pem$/i, '');
+            if (appId.length === 36) {
+              document.getElementById('eb-app-id-input').value = appId;
+            }
+          }
+          </script>
+          <button class="btn btn-primary" type="submit">Save & continue →</button>
+        </form>
+        {% else %}
+        {% if pem_ready %}
+        <div style="margin-bottom:1rem; padding:10px 14px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; font-size:13px; color:#166534; display:flex; align-items:center; gap:8px;">
+          <span>&#10003;</span> Private key loaded. <a href="/connect/reset-pem" style="color:var(--muted); font-size:12px; margin-left:auto;">Replace</a>
+        </div>
+        {% endif %}
         <form method="POST" id="connect-form">
           <input type="hidden" name="action" value="start">
           <input type="hidden" id="inp-bank-name" name="bank_name">
@@ -83,6 +119,7 @@
           <div style="font-size:11px; color:var(--hint); margin-top:0.5rem;">Personal accounts only. 2,500+ banks across 29 European countries.</div>
           <button class="btn btn-primary" type="submit" id="connect-btn" disabled>Authorise bank →</button>
         </form>
+        {% endif %}
       {% endif %}
     </div>
 
