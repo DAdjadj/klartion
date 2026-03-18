@@ -6,6 +6,9 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
+CONTAINER_NAME = "klartion"
+IMAGE_NAME = "daalves/klartion:latest"
+
 @app.before_request
 def load_secret_key():
     from .. import config as cfg
@@ -105,6 +108,7 @@ def setup_notion():
         error=error,
         notion_api_key=_cfg().NOTION_API_KEY,
         notion_database_id=_cfg().NOTION_DATABASE_ID,
+        is_configured=_is_configured(),
     )
 
 @app.route("/setup/notifications", methods=["GET", "POST"])
@@ -143,6 +147,10 @@ def deactivate_licence():
         _cfg().set("LICENCE_KEY", "")
         return redirect(url_for("setup_licence") + "?msg=deactivated")
     return redirect(url_for("status") + "?error=" + (result["error"] or "Deactivation failed."))
+
+@app.route("/health")
+def health():
+    return jsonify({"status": "ok"})
 
 @app.route("/api/last-sync")
 def last_sync_api():
@@ -331,6 +339,7 @@ def status():
         licence_limit_reached=(licence_sync_failed and activation_usage >= activation_limit and activation_limit > 0),
         page=log_data["page"],
         total_pages=log_data["total_pages"],
+        update_mode=db.get_setting("update_mode"),
     )
 
 @app.route("/sync/now", methods=["POST"])
@@ -338,6 +347,15 @@ def sync_now():
     import threading
     threading.Thread(target=sync.run, daemon=True).start()
     return jsonify({"ok": True})
+
+@app.route("/sync/reset", methods=["POST"])
+def sync_reset():
+    db.clear_sync_log()
+    conn = db.get_conn()
+    conn.execute("DELETE FROM transactions")
+    conn.commit()
+    conn.close()
+    return redirect(url_for("status"))
 
 @app.route("/sync/clear", methods=["POST"])
 def clear_sync_log():
@@ -360,6 +378,32 @@ def disconnect():
     else:
         db.clear_tokens()
     return redirect(url_for("connect"))
+
+# ---------------------------------------------------------------------------
+# Update preference + self-update
+# ---------------------------------------------------------------------------
+
+@app.route("/update/preference", methods=["POST"])
+def update_preference():
+    mode = request.form.get("mode", "manual")
+    db.set_setting("update_mode", mode)
+    return redirect(url_for("status"))
+
+@app.route("/update/run", methods=["POST"])
+def update_run():
+    import subprocess, os
+    if not os.path.exists("/var/run/docker.sock"):
+        return jsonify({"error": "Docker socket not mounted. Add '- /var/run/docker.sock:/var/run/docker.sock' and '- .:/compose:ro' to your docker-compose.yml volumes."}), 400
+    try:
+        subprocess.Popen(
+            ["sh", "-c", f"sleep 2 && docker pull {IMAGE_NAME} && cd /compose && docker compose up -d"],
+            start_new_session=True
+        )
+        return jsonify({"ok": True})
+    except FileNotFoundError:
+        return jsonify({"error": "Docker CLI not available in container."}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 _banks_cache = None
 
