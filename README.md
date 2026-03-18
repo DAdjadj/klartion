@@ -51,7 +51,7 @@ Enable Banking is the regulated open banking provider that connects Klartion to 
    - **Email for data protection matters:** your email address
    - **Privacy URL:** `https://klartion.com/privacy`
    - **Terms URL:** `https://klartion.com/terms`
-4. Click **Register** — a `.pem` file will be saved to your Downloads folder. The filename matches your Application ID (e.g. `aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.pem`). Keep it safe.
+4. Click **Register** — a `.pem` file will be saved to your Downloads folder. The filename matches your Application ID (e.g. `aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.pem`). Keep it safe — you'll need it in the setup wizard.
 5. Click **Activate by linking accounts** on your application page
 6. Select your country and bank from the dropdowns and click **Link**
 7. Follow the steps to log in to your bank and approve read-only access — this activates your Enable Banking app
