@@ -144,6 +144,10 @@ def deactivate_licence():
         return redirect(url_for("setup_licence") + "?msg=deactivated")
     return redirect(url_for("status") + "?error=" + (result["error"] or "Deactivation failed."))
 
+@app.route("/api/last-sync")
+def last_sync_api():
+    return jsonify({"ran_at": db.get_last_sync() or ""})
+
 @app.route("/api/bank-status")
 def bank_status():
     return jsonify({"connected": db.get_tokens() is not None})
@@ -195,18 +199,35 @@ def connect():
             return redirect(url_for("connect"))
 
     import glob
-    tokens    = db.get_tokens()
-    success   = request.args.get("success")
-    pem_ready = bool(glob.glob("/app/data/*.pem"))
+    all_tokens = db.get_all_tokens()
+    tokens     = db.get_tokens()  # for backwards compat
+    success    = request.args.get("success")
+    pem_ready  = bool(glob.glob("/app/data/*.pem"))
+
+    # Fetch bank account limit from licence API
+    bank_account_limit = 2
+    try:
+        import requests as _requests
+        key = _cfg().LICENCE_KEY
+        if key:
+            resp = _requests.post("https://api.klartion.com/info", json={"license_key": key}, timeout=5)
+            if resp.status_code == 200:
+                bank_account_limit = resp.json().get("bank_account_limit", 2)
+    except Exception:
+        pass
+
     return render_template("connect.html",
         error=error,
         success=success,
         auth_url=auth_url,
         tokens=tokens,
+        all_tokens=all_tokens,
         pending_bank=pending,
         sync_time=_cfg().SYNC_TIME,
         pem_ready=pem_ready,
         eb_app_id=_cfg().EB_APP_ID,
+        bank_account_limit=bank_account_limit,
+        bank_slot_url=f"https://buy.stripe.com/4gM9AMg348nt2Y7185cMM04?client_reference_id={_cfg().LICENCE_KEY}",
     )
 
 @app.route("/connect/reauthorise", methods=["POST"])
@@ -265,12 +286,13 @@ def status():
     if not _is_connected():
         return redirect(url_for("connect"))
 
-    tokens    = db.get_tokens()
-    page      = request.args.get("page", 1, type=int)
-    log_data  = db.get_sync_log_page(page=page, per_page=5)
-    syncs     = log_data["syncs"]
-    days_left = enablebanking.check_token_expiry()
-    last_sync = db.get_last_sync()
+    tokens     = db.get_tokens()
+    all_tokens = db.get_all_tokens()
+    page       = request.args.get("page", 1, type=int)
+    log_data   = db.get_sync_log_page(page=page, per_page=5)
+    syncs      = log_data["syncs"]
+    days_left  = enablebanking.check_token_expiry()
+    last_sync  = db.get_last_sync()
 
     licence_sync_failed = False
     val = licence.validate()
@@ -297,6 +319,7 @@ def status():
 
     return render_template("status.html",
         tokens=tokens,
+        all_tokens=all_tokens,
         syncs=syncs,
         days_left=days_left,
         last_sync=last_sync,
@@ -331,7 +354,11 @@ def reset_pem():
 
 @app.route("/disconnect", methods=["POST"])
 def disconnect():
-    db.clear_tokens()
+    token_id = request.form.get("token_id")
+    if token_id:
+        db.clear_token_by_id(int(token_id))
+    else:
+        db.clear_tokens()
     return redirect(url_for("connect"))
 
 _banks_cache = None
