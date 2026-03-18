@@ -11,6 +11,7 @@ REDIRECT_URI = "https://klartion.com/callback"
 def _db_get(key):
     try:
         conn = sqlite3.connect(DB_PATH)
+        conn.execute("PRAGMA journal_mode=WAL")
         row = conn.execute(
             "SELECT value FROM settings WHERE key = ?", (f"config:{key}",)
         ).fetchone()
@@ -25,6 +26,7 @@ def _get(key, default=""):
 def set(key, value):
     try:
         conn = sqlite3.connect(DB_PATH)
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.execute(
             "INSERT INTO settings (key, value) VALUES (?, ?) "
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
