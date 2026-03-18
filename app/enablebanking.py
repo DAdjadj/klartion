@@ -62,7 +62,7 @@ def get_banks() -> list:
     return result
 
 def start_auth(bank_name: str, bank_country: str) -> dict:
-    valid_until = (datetime.now(timezone.utc) + timedelta(days=89)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    valid_until = (datetime.now(timezone.utc) + timedelta(days=180)).strftime("%Y-%m-%dT%H:%M:%SZ")
     payload = {
         "access": {
             "valid_until": valid_until,
