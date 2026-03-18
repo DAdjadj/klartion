@@ -49,17 +49,30 @@ def setup_licence():
 
 @app.route("/setup/bank", methods=["GET", "POST"])
 def setup_bank():
+    import glob, os
     error = None
     if request.method == "POST":
-        app_id = request.form.get("eb_app_id", "").strip()
+        app_id   = request.form.get("eb_app_id", "").strip()
+        pem_file = request.files.get("pem_file")
+        existing_pem = glob.glob("/app/data/*.pem")
         if not app_id:
             error = "Application ID is required."
+        elif not pem_file or not pem_file.filename:
+            if not existing_pem:
+                error = "Private key file is required."
+            else:
+                _cfg().set("EB_APP_ID", app_id)
+                return redirect(url_for("setup_notion"))
         else:
+            pem_path = os.path.join("/app/data", f"{app_id}.pem")
+            pem_file.save(pem_path)
             _cfg().set("EB_APP_ID", app_id)
             return redirect(url_for("setup_notion"))
+    pem_exists = bool(glob.glob("/app/data/*.pem"))
     return render_template("setup_bank.html",
         error=error,
         eb_app_id=_cfg().EB_APP_ID,
+        pem_uploaded=pem_exists,
         active="bank",
     )
 @app.route("/setup/notion", methods=["GET", "POST"])
