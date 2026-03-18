@@ -18,7 +18,8 @@
       <div class="step done"></div>
       <div class="step done"></div>
       <div class="step done"></div>
-      <div class="step active"></div>
+      <div class="step done"></div>
+      <div class="step done"></div>
     </div>
 
     {% if licence_sync_failed %}
@@ -141,6 +142,38 @@
       <a href="/connect" class="btn btn-ghost" style="display:inline-flex; align-items:center; gap:6px;">← Bank</a>
     </div>
 
+    {% if not update_mode %}
+    <div class="card">
+      <div class="card-title" style="font-size:15px; margin-bottom:0.25rem;">Updates</div>
+      <div style="font-size:13px; color:var(--muted); margin-bottom:1rem;">How would you like to update Klartion?</div>
+      <form method="POST" action="/update/preference" style="margin-bottom:0.75rem;">
+        <input type="hidden" name="mode" value="auto">
+        <button type="submit" class="btn btn-primary" style="width:100%; font-size:13px; margin-top:0;">Auto-update</button>
+        <div style="font-size:11px; color:var(--hint); margin-top:0.35rem;">Requires adding Docker socket to your compose file. One-time setup.</div>
+      </form>
+      <form method="POST" action="/update/preference">
+        <input type="hidden" name="mode" value="manual">
+        <button type="submit" class="btn btn-ghost" style="width:100%; font-size:13px; margin-top:0;">Manual</button>
+        <div style="font-size:11px; color:var(--hint); margin-top:0.35rem;">Copy and paste a command in your terminal.</div>
+      </form>
+    </div>
+    {% elif update_mode == 'auto' %}
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div class="card-title" style="font-size:15px; margin-bottom:0;">Updates</div>
+        <button class="btn btn-ghost" id="update-btn" onclick="runUpdate()" style="font-size:12px;">Check for updates</button>
+      </div>
+      <div id="update-status" style="font-size:12px; color:var(--muted); margin-top:0.5rem; display:none;"></div>
+    </div>
+    {% elif update_mode == 'manual' %}
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div class="card-title" style="font-size:15px; margin-bottom:0;">Updates</div>
+        <button class="btn btn-ghost" onclick="copyUpdate(this)" style="font-size:12px;">Copy update command</button>
+      </div>
+    </div>
+    {% endif %}
+
     <nav class="footer-nav">
       <a href="/setup">License</a>
       <a href="/setup/notion">Notion</a>
@@ -151,6 +184,41 @@
   </div>
 
   <script>
+    async function runUpdate() {
+      const btn = document.getElementById('update-btn');
+      const status = document.getElementById('update-status');
+      btn.textContent = 'Checking...';
+      btn.disabled = true;
+      status.style.display = 'block';
+      status.textContent = 'Pulling latest image...';
+      try {
+        const resp = await fetch('/update/run', { method: 'POST' });
+        const data = await resp.json();
+        if (data.ok) {
+          status.textContent = 'Updating... the page will refresh automatically.';
+          setTimeout(function pollServer() {
+            fetch('/health').then(function(r) { if (r.ok) location.reload(); else setTimeout(pollServer, 2000); }).catch(function() { setTimeout(pollServer, 2000); });
+          }, 5000);
+        } else if (data.error) {
+          status.innerHTML = 'Auto-update unavailable. Add these lines to your docker-compose.yml volumes:<br><code style="font-size:11px;">- /var/run/docker.sock:/var/run/docker.sock</code><br><code style="font-size:11px;">- .:/compose:ro</code>';
+          btn.textContent = 'Check for updates';
+          btn.disabled = false;
+        }
+      } catch(e) {
+        status.textContent = 'Update may be in progress. Refreshing...';
+        setTimeout(function pollServer() {
+          fetch('/health').then(function(r) { if (r.ok) location.reload(); else setTimeout(pollServer, 2000); }).catch(function() { setTimeout(pollServer, 2000); });
+        }, 3000);
+      }
+    }
+
+    function copyUpdate(btn) {
+      navigator.clipboard.writeText('cd ~/klartion && docker compose pull && docker compose up -d').then(function() {
+        btn.textContent = 'Copied';
+        setTimeout(function() { btn.textContent = 'Copy update command'; }, 1500);
+      });
+    }
+
     async function runSync() {
       const btn = document.getElementById('sync-btn');
       btn.textContent = 'Syncing...';

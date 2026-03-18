@@ -8,6 +8,8 @@ services:
     volumes:
       - ./data:/app/data
       - ./app:/app/app
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/compose:ro
     env_file:
       - .env
     labels:

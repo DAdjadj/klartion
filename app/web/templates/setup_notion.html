@@ -18,10 +18,11 @@
       <div class="step active"></div>
       <div class="step"></div>
       <div class="step"></div>
+      <div class="step"></div>
     </div>
     <div class="card">
       <div class="card-title">Connect Notion</div>
-      <div class="card-sub">Step 2 of 4 — where should transactions be written?</div>
+      <div class="card-sub">Step 2 of 5 — where should transactions be written?</div>
       {% if error %}
         <div class="alert alert-error">{{ error }}</div>
       {% endif %}
@@ -43,6 +44,15 @@
         </div>
         <button class="btn btn-primary" type="submit">Verify and continue →</button>
       </form>
+      {% if is_configured %}
+      <div style="margin-top:1.5rem; padding-top:1.25rem; border-top:1px solid var(--border);">
+        <div style="font-size:13px; font-weight:600; margin-bottom:0.35rem;">Reset sync</div>
+        <div style="font-size:11px; color:var(--hint); margin-bottom:0.75rem;">Re-import all transactions on the next sync. Useful after connecting a new bank or if transactions are missing.</div>
+        <form method="POST" action="/sync/reset" onsubmit="return confirm('This will clear the sync history and re-import all transactions on the next sync. Continue?');">
+          <button type="submit" class="btn btn-ghost" style="font-size:13px;">Reset sync →</button>
+        </form>
+      </div>
+      {% endif %}
     </div>
     <nav class="footer-nav">
       <a href="/setup">License</a>
