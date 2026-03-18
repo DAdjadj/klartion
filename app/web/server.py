@@ -393,13 +393,21 @@ def update_preference():
 def update_run():
     import subprocess, os
     if not os.path.exists("/var/run/docker.sock"):
-        return jsonify({"error": "Docker socket not mounted. Add '- /var/run/docker.sock:/var/run/docker.sock' and '- .:/compose:ro' to your docker-compose.yml volumes."}), 400
+        return jsonify({"error": "Docker socket not mounted."}), 400
     try:
+        # Pull and check if image changed
+        pull = subprocess.run(
+            ["docker", "pull", IMAGE_NAME],
+            capture_output=True, text=True, timeout=120
+        )
+        if "Image is up to date" in pull.stdout or "Image is up to date" in pull.stderr:
+            return jsonify({"up_to_date": True})
+        # New image pulled — restart
         subprocess.Popen(
-            ["sh", "-c", f"sleep 2 && docker pull {IMAGE_NAME} && cd /compose && docker compose up -d"],
+            ["sh", "-c", "sleep 2 && cd /compose && docker compose up -d"],
             start_new_session=True
         )
-        return jsonify({"ok": True})
+        return jsonify({"updating": True})
     except FileNotFoundError:
         return jsonify({"error": "Docker CLI not available in container."}), 400
     except Exception as e:
