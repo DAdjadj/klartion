@@ -34,49 +34,7 @@
         </div>
       {% endif %}
 
-      {% if all_tokens and not auth_url %}
-        {% for t in all_tokens %}
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; padding:12px 14px; background:var(--surface); border:1px solid var(--border); border-radius:8px;">
-          <div>
-            <div class="connected-pill">Connected</div>
-            <div style="margin-top:8px; font-family:var(--mono); font-size:12px; color:var(--muted);">
-              {{ t.bank_name }} ({{ t.bank_country }})
-            </div>
-          </div>
-          <form method="POST" action="/disconnect">
-            <input type="hidden" name="token_id" value="{{ t.id }}">
-            <button type="submit" class="btn btn-danger-ghost">Disconnect</button>
-          </form>
-        </div>
-        {% endfor %}
-      {% endif %}
-
-      {% if auth_url %}
-        <div style="text-align:center; padding:0.5rem 0 1rem;">
-          <div id="spinner" style="display:none; width:36px; height:36px; border:2px solid var(--border); border-top-color:var(--text); border-radius:50%; animation:spin 0.7s linear infinite; margin:0 auto 1rem;"></div>
-          <div id="waiting-msg" style="display:none; font-size:14px; color:var(--muted); margin-bottom:1rem;">Waiting for approval — complete the steps in your browser...</div>
-          <div id="pre-msg">
-            <div style="font-size:15px; font-weight:600; margin-bottom:0.5rem; font-family:var(--serif);">Authorise {{ pending_bank }}</div>
-            <div style="font-size:13px; color:var(--muted); margin-bottom:1.5rem; line-height:1.6;">
-              Click the button below to open your bank login page.<br>
-              After approving, you will be returned here automatically.
-            </div>
-          </div>
-        </div>
-        <a href="{{ auth_url }}" class="btn btn-primary">Open {{ pending_bank }} login →</a>
-        <form method="POST" style="margin-top:0.75rem;">
-          <input type="hidden" name="action" value="cancel">
-          <button type="submit" class="btn btn-secondary" style="margin-top:0;">Cancel</button>
-        </form>
-
-      {% elif not auth_url %}
-        {% if all_tokens|length >= bank_account_limit %}
-        <div style="padding:14px; background:var(--surface); border:1px solid var(--border); border-radius:8px; font-size:13px; color:var(--muted); text-align:center;">
-          Bank account limit reached ({{ all_tokens|length }}/{{ bank_account_limit }}). <a href="{{ bank_slot_url }}" target="_blank" style="color:var(--text); font-weight:600;">Add more →</a>
-        </div>
-        {% elif not pem_ready %}
-        <div class="card-title">Upload your private key</div>
-        <div class="card-sub">Step 4 of 4 — upload your Enable Banking private key file before connecting your bank.</div>
+      {% if not pem_ready and not auth_url %}
         <form method="POST" enctype="multipart/form-data">
           <input type="hidden" name="action" value="upload_pem">
           <label style="margin-top:0;">Private key file (.pem)</label>
@@ -97,12 +55,48 @@
           </script>
           <button class="btn btn-primary" type="submit">Save & continue →</button>
         </form>
-        {% else %}
-        {% if pem_ready %}
-        <div style="margin-bottom:1rem; padding:10px 14px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; font-size:13px; color:#166534; display:flex; align-items:center; gap:8px;">
+
+      {% elif pem_ready and not auth_url %}
+        <div style="margin-bottom:1.5rem; padding:10px 14px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; font-size:13px; color:#166534; display:flex; align-items:center; gap:8px;">
           <span>&#10003;</span> Private key loaded. <a href="/connect/reset-pem" style="color:var(--muted); font-size:12px; margin-left:auto;">Replace</a>
         </div>
+
+        {% if all_tokens %}
+        <div style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.8px; color:var(--muted); margin-bottom:0.5rem;">Connected accounts ({{ all_tokens|length }}/{{ bank_account_limit }})</div>
+        {% for t in all_tokens %}
+        <div style="margin-bottom:0.75rem; padding:12px 14px; border:1px solid var(--border); border-radius:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <div class="connected-pill">Connected</div>
+              <div style="margin-top:8px; font-family:var(--mono); font-size:12px; color:var(--muted);">
+                {{ t.bank_name }} ({{ t.bank_country }})
+              </div>
+            </div>
+            <form method="POST" action="/disconnect">
+              <input type="hidden" name="token_id" value="{{ t.id }}">
+              <button type="submit" class="btn btn-danger-ghost">Disconnect</button>
+            </form>
+          </div>
+          {% if t.expires_at %}
+          <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--hint);">
+            <span>Expires {{ t.expires_at[:10] }}</span>
+            <form method="POST" action="/connect/reauthorise" style="display:inline;">
+              <input type="hidden" name="bank_name" value="{{ t.bank_name }}">
+              <input type="hidden" name="bank_country" value="{{ t.bank_country }}">
+              <button type="submit" style="background:none; border:none; color:var(--muted); cursor:pointer; font-size:11px; text-decoration:underline;">Re-authorise</button>
+            </form>
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+        <hr style="border:none; border-top:1px solid var(--border); margin:1.25rem 0;">
         {% endif %}
+
+        {% if all_tokens|length >= bank_account_limit %}
+        <div style="padding:14px; background:var(--surface); border:1px solid var(--border); border-radius:8px; font-size:13px; color:var(--muted); text-align:center;">
+          Bank account limit reached. <a href="{{ bank_slot_url }}" target="_blank" style="color:var(--text); font-weight:600;">Add more →</a>
+        </div>
+        {% else %}
         <form method="POST" id="connect-form">
           <input type="hidden" name="action" value="start">
           <input type="hidden" id="inp-bank-name" name="bank_name">
@@ -120,6 +114,20 @@
           <button class="btn btn-primary" type="submit" id="connect-btn" disabled>Authorise bank →</button>
         </form>
         {% endif %}
+
+      {% elif auth_url %}
+        <div style="text-align:center; padding:0.5rem 0 1rem;">
+          <div style="font-size:15px; font-weight:600; margin-bottom:0.5rem; font-family:var(--serif);">Authorise {{ pending_bank }}</div>
+          <div style="font-size:13px; color:var(--muted); margin-bottom:1.5rem; line-height:1.6;">
+            Click the button below to open your bank login page.<br>
+            After approving, you will be returned here automatically.
+          </div>
+        </div>
+        <a href="{{ auth_url }}" class="btn btn-primary">Open {{ pending_bank }} login →</a>
+        <form method="POST" style="margin-top:0.75rem;">
+          <input type="hidden" name="action" value="cancel">
+          <button type="submit" class="btn btn-secondary" style="margin-top:0;">Cancel</button>
+        </form>
       {% endif %}
     </div>
 
