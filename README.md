@@ -143,6 +143,10 @@ The [Klartion template](https://hilarious-mirror-513.notion.site/4f95e8e7b23183c
 ---
 
 ## Updating
+
+Click **Check for updates** on the Status page. Klartion will pull the latest version and restart automatically.
+
+Or run manually:
 ```bash
 docker compose pull && docker compose up -d
 ```
