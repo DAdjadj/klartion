@@ -40,7 +40,7 @@ def is_configured():
     if not licence or licence == "pending":
         return False
     required = [
-        licence, _get("EB_APP_ID"),
+        licence,
         _get("NOTION_API_KEY"), _get("NOTION_DATABASE_ID"),
         _get("SMTP_USER"), _get("SMTP_PASSWORD"), _get("NOTIFY_EMAIL"),
     ]

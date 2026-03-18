@@ -46,6 +46,22 @@ def setup_licence():
         licence_key=_cfg().LICENCE_KEY,
     )
 
+
+@app.route("/setup/bank", methods=["GET", "POST"])
+def setup_bank():
+    error = None
+    if request.method == "POST":
+        app_id = request.form.get("eb_app_id", "").strip()
+        if not app_id:
+            error = "Application ID is required."
+        else:
+            _cfg().set("EB_APP_ID", app_id)
+            return redirect(url_for("setup_notion"))
+    return render_template("setup_bank.html",
+        error=error,
+        eb_app_id=_cfg().EB_APP_ID,
+        active="bank",
+    )
 @app.route("/setup/notion", methods=["GET", "POST"])
 def setup_notion():
     error = None
@@ -278,8 +294,12 @@ def banks():
             _banks_cache = enablebanking.get_banks()
         except Exception as e:
             logger.error("Failed to fetch banks: %s", e)
-            return jsonify([])
-    return jsonify(_banks_cache)
+            resp = jsonify([])
+            resp.headers["Access-Control-Allow-Origin"] = "*"
+            return resp
+    resp = jsonify(_banks_cache)
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    return resp
 
 def _start_scheduler_if_ready():
     if _is_configured():
