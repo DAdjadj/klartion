@@ -10,7 +10,7 @@ Klartion connects to your EU bank via open banking and writes your transactions 
 
 ## What you get
 
-- **Daily automatic sync** — transactions land in Notion once a day, at a time you choose
+- **Flexible sync frequency** — sync every 6, 12, or 24 hours, at a time you choose
 - **2,500+ European banks** — Revolut, N26, Monzo, Wise, Millennium BCP, Santander, ING, BNP Paribas, and more across 29 countries
 - **Multiple bank accounts** — connect up to 2 bank accounts by default, with the option to add more
 - **Read-only, always** — Klartion can never move money or modify your account
@@ -86,8 +86,10 @@ The browser-based wizard walks you through four steps:
 
 1. **Licence** — enter your key to activate Klartion on this machine
 2. **Notion** — duplicate the [ready-made template](https://hilarious-mirror-513.notion.site/4f95e8e7b23183c3be5381bef1d906b2), create a free integration, and paste your credentials
-3. **Notifications** — set your email, SMTP credentials, and daily sync time
-4. **Bank** — connect your bank via Enable Banking OAuth (one-time, browser-based). You can connect up to 2 bank accounts by default. Each bank's transactions are tagged with the bank name in a "Bank" column in Notion.
+3. **Notifications** — set your email and SMTP credentials
+4. **Sync** — choose your sync frequency (every 6, 12, or 24 hours)
+5. **Bank** — connect your bank via Enable Banking OAuth (one-time, browser-based). You can connect up to 2 bank accounts by default. Each bank's transactions are tagged with the bank name in a "Bank" column in Notion.
+6. **Status** — view sync history, manage bank connections, check for updates
 
 Once complete, Klartion runs silently in the background. To add a second bank, go to the **Bank** tab and search for another bank. Need more than 2? You can purchase additional bank account slots from the status page.
 
