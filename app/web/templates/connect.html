@@ -18,13 +18,14 @@
       <div class="step done"></div>
       <div class="step done"></div>
       <div class="step done"></div>
+      <div class="step done"></div>
       <div class="step {% if tokens %}done{% else %}active{% endif %}"></div>
       <div class="step"></div>
     </div>
 
     <div class="card">
       <div class="card-title">Bank</div>
-      <div class="card-sub">Step 4 of 5 — authorise read-only access via Enable Banking</div>
+      <div class="card-sub">Step 5 of 6 — authorise read-only access via Enable Banking</div>
 
       {% if error %}
         <div class="alert alert-error">{{ error }}</div>
@@ -112,7 +113,7 @@
             <button type="button" onclick="clearBank()" style="background:none; border:none; color:var(--muted); cursor:pointer; font-size:11px; padding:0;">clear</button>
           </div>
           <div style="font-size:11px; color:var(--hint); margin-top:0.5rem;">Personal accounts only. 2,500+ banks across 29 European countries.</div>
-          <button class="btn btn-primary" type="submit" id="connect-btn" disabled>Authorise bank →</button>
+          <button class="btn btn-primary" type="submit" id="connect-btn" disabled style="background:var(--border); opacity:0.5;">Authorise bank →</button>
         </form>
         {% endif %}
 
@@ -142,6 +143,7 @@
       <a href="/setup">License</a>
       <a href="/setup/notion">Notion</a>
       <a href="/setup/notifications">Notifications</a>
+      <a href="/setup/sync">Sync</a>
       <a href="/connect" class="active">Bank</a>
       <a href="/status">Status</a>
     </nav>
@@ -175,14 +177,20 @@
       document.getElementById('bank-dropdown').style.display = 'none';
       document.getElementById('selected-label').textContent = name + ' (' + country + ')';
       document.getElementById('selected-bank').style.display = 'flex';
-      document.getElementById('connect-btn').disabled = false;
+      var btn = document.getElementById('connect-btn');
+      btn.disabled = false;
+      btn.style.background = '#37996b';
+      btn.style.opacity = '1';
     }
     function clearBank() {
       document.getElementById('inp-bank-name').value = '';
       document.getElementById('inp-bank-country').value = '';
       document.getElementById('bank-search').value = '';
       document.getElementById('selected-bank').style.display = 'none';
-      document.getElementById('connect-btn').disabled = true;
+      var btn = document.getElementById('connect-btn');
+      btn.disabled = true;
+      btn.style.background = 'var(--border)';
+      btn.style.opacity = '0.5';
     }
     document.addEventListener('click', function(e) {
       const dd = document.getElementById('bank-dropdown');
