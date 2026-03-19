@@ -215,13 +215,10 @@
       btn.disabled = true;
       try {
         await fetch('/sync/now', { method: 'POST' });
-        // Poll until sync completes (new log entry appears)
-        var attempts = 0;
+        // Poll until sync finishes
         var poll = setInterval(function() {
-          attempts++;
-          if (attempts > 60) { clearInterval(poll); location.reload(); return; }
-          fetch('/api/last-sync').then(function(r) { return r.json(); }).then(function(d) {
-            if (d.ran_at && d.ran_at !== '{{ last_sync or "" }}') {
+          fetch('/api/sync-status').then(function(r) { return r.json(); }).then(function(d) {
+            if (!d.running) {
               clearInterval(poll);
               location.reload();
             }
