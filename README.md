@@ -19,12 +19,13 @@ Klartion connects to your EU bank via open banking and writes your transactions 
 - **Email notifications** — a summary email on success, an alert if something goes wrong
 - **Your data, your machine** — bank data goes directly from Enable Banking to your machine, never our servers
 - **Lightweight** — runs as a single Docker container, uses minimal CPU and memory
+- **Runs anywhere** — supports x86, Raspberry Pi, and other ARM devices out of the box
 
 ---
 
 ## Requirements
 
-- Docker and Docker Compose
+- Docker and Docker Compose (runs on x86, Raspberry Pi, and other ARM devices)
 - An [Enable Banking](https://enablebanking.com) account (free)
 - A [Notion](https://notion.so) account
 - A Klartion licence key — [buy one at klartion.com](https://klartion.com)
