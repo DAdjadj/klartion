@@ -59,8 +59,8 @@
         }
         </script>
         <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">For iCloud: use an app-specific password from <a href="https://appleid.apple.com" target="_blank" style="color:var(--muted);">appleid.apple.com</a></div>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <button class="btn btn-primary" type="submit">Continue</button>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <button class="btn btn-primary" type="submit" style="width:auto;">Continue</button>
           {% if smtp_user and smtp_password %}
           <button type="button" class="btn btn-ghost" id="test-email-btn" onclick="sendTestEmail()" style="font-size:12px;">Send test email</button>
           {% endif %}
