@@ -117,7 +117,6 @@ def setup_notifications():
     if request.method == "POST":
         klartion_url = request.form.get("klartion_url", "").strip().rstrip("/")
         email        = request.form.get("notify_email", "").strip()
-        sync_time    = request.form.get("sync_time", "08:00").strip()
         smtp_user    = request.form.get("smtp_user", "").strip()
         smtp_pass    = request.form.get("smtp_password", "").strip()
         if not klartion_url or not email or not smtp_user or not smtp_pass:
@@ -125,18 +124,32 @@ def setup_notifications():
         else:
             _cfg().set("KLARTION_URL",   klartion_url)
             _cfg().set("NOTIFY_EMAIL",   email)
-            _cfg().set("SYNC_TIME",      sync_time)
             _cfg().set("SMTP_USER",      smtp_user)
             _cfg().set("SMTP_PASSWORD",  smtp_pass)
-            _start_scheduler_if_ready()
-            return redirect(url_for("connect"))
+            return redirect(url_for("setup_sync"))
     return render_template("setup_notifications.html",
         error=error,
         klartion_url=_cfg().KLARTION_URL,
         notify_email=_cfg().NOTIFY_EMAIL,
-        sync_time=_cfg().SYNC_TIME,
         smtp_user=_cfg().SMTP_USER,
         smtp_password=_cfg().SMTP_PASSWORD,
+    )
+
+@app.route("/setup/sync", methods=["GET", "POST"])
+def setup_sync():
+    error = None
+    if request.method == "POST":
+        sync_time = request.form.get("sync_time", "08:00").strip()
+        sync_frequency = request.form.get("sync_frequency", "24").strip()
+        _cfg().set("SYNC_TIME", sync_time)
+        _cfg().set("SYNC_FREQUENCY", sync_frequency)
+        _start_scheduler_if_ready()
+        return redirect(url_for("connect"))
+    return render_template("setup_sync.html",
+        error=error,
+        sync_time=_cfg().SYNC_TIME or "08:00",
+        sync_frequency=_cfg().SYNC_FREQUENCY if hasattr(_cfg(), 'SYNC_FREQUENCY') else "24",
+        is_configured=_is_configured(),
     )
 
 @app.route("/settings/deactivate", methods=["POST"])
@@ -325,6 +338,33 @@ def status():
     except Exception:
         pass
 
+    # Fun stats
+    import random
+    conn = db.get_conn()
+    total_tx = conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0]
+    streak_rows = conn.execute("SELECT status FROM sync_log ORDER BY ran_at DESC LIMIT 100").fetchall()
+    conn.close()
+    streak = 0
+    for r in streak_rows:
+        if r["status"] == "success":
+            streak += 1
+        else:
+            break
+
+    fun_messages = [
+        "Your finances are in good hands.",
+        "Another day, another sync.",
+        "Everything's running smoothly.",
+        "Your bank called. They said everything's fine.",
+        "Transactions delivered. You're welcome.",
+        "Syncing like clockwork.",
+        "Your Notion database is looking sharp.",
+        "All quiet on the banking front.",
+        "Nothing to worry about here.",
+        "Your data, your machine, your peace of mind.",
+    ]
+    fun_message = random.choice(fun_messages)
+
     return render_template("status.html",
         tokens=tokens,
         all_tokens=all_tokens,
@@ -340,6 +380,9 @@ def status():
         page=log_data["page"],
         total_pages=log_data["total_pages"],
         update_mode=db.get_setting("update_mode"),
+        total_tx=total_tx,
+        streak=streak,
+        fun_message=fun_message,
     )
 
 @app.route("/sync/now", methods=["POST"])
@@ -388,6 +431,41 @@ def update_preference():
     mode = request.form.get("mode", "manual")
     db.set_setting("update_mode", mode)
     return redirect(url_for("status"))
+
+@app.route("/update/check", methods=["GET"])
+def update_check():
+    import subprocess, os
+    if not os.path.exists("/var/run/docker.sock"):
+        return jsonify({"available": False})
+    try:
+        # Get current running image ID
+        current = subprocess.run(
+            ["docker", "inspect", "--format", "{{.Image}}", CONTAINER_NAME],
+            capture_output=True, text=True, timeout=10
+        ).stdout.strip()
+        # Get latest local image ID (without pulling)
+        # Use Docker Hub API to check digest
+        import requests as _req
+        repo = IMAGE_NAME.split(":")[0]
+        tag = IMAGE_NAME.split(":")[1] if ":" in IMAGE_NAME else "latest"
+        token_resp = _req.get(f"https://auth.docker.io/token?service=registry.docker.io&scope=repository:{repo}:pull", timeout=5)
+        token = token_resp.json().get("token", "")
+        manifest_resp = _req.head(
+            f"https://registry-1.docker.io/v2/{repo}/manifests/{tag}",
+            headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.docker.distribution.manifest.v2+json"},
+            timeout=5
+        )
+        remote_digest = manifest_resp.headers.get("Docker-Content-Digest", "")
+        # Get local image digest
+        local_digest = subprocess.run(
+            ["docker", "inspect", "--format", "{{index .RepoDigests 0}}", IMAGE_NAME],
+            capture_output=True, text=True, timeout=10
+        ).stdout.strip()
+        # local_digest looks like "daalves/klartion@sha256:abc..."
+        local_sha = local_digest.split("@")[-1] if "@" in local_digest else ""
+        return jsonify({"available": remote_digest != local_sha and remote_digest != ""})
+    except Exception:
+        return jsonify({"available": False})
 
 @app.route("/update/run", methods=["POST"])
 def update_run():

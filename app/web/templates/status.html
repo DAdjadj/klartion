@@ -20,6 +20,7 @@
       <div class="step done"></div>
       <div class="step done"></div>
       <div class="step done"></div>
+      <div class="step done"></div>
     </div>
 
     {% if licence_sync_failed %}
@@ -38,7 +39,7 @@
       <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1.5rem;">
         <div>
           <div class="card-title" style="margin-bottom:0.25rem;">Status</div>
-          <div class="card-sub" style="margin-bottom:0;">Your sync is active</div>
+          <div class="card-sub" style="margin-bottom:0;">{{ fun_message }}</div>
         </div>
         <button class="btn btn-ghost" id="sync-btn" onclick="runSync()">Sync now</button>
       </div>
@@ -78,6 +79,18 @@
         <span class="stat-label">Notifications</span>
         <span class="stat-value">{{ notify_email }}</span>
       </div>
+      {% if total_tx > 0 %}
+      <div class="stat-row">
+        <span class="stat-label">Transactions synced</span>
+        <span class="stat-value">{{ total_tx }}</span>
+      </div>
+      {% endif %}
+      {% if streak > 1 %}
+      <div class="stat-row">
+        <span class="stat-label">Sync streak</span>
+        <span class="stat-value">{{ streak }} in a row</span>
+      </div>
+      {% endif %}
       {% if days_left is not none and days_left <= 14 %}
       <div class="alert alert-warn" style="margin-top:1rem;">
         A bank connection expires in {{ days_left }} day{{ 's' if days_left != 1 else '' }}.
@@ -154,6 +167,7 @@
       <a href="/setup">License</a>
       <a href="/setup/notion">Notion</a>
       <a href="/setup/notifications">Notifications</a>
+      <a href="/setup/sync">Sync</a>
       <a href="/connect">Bank</a>
       <a href="/status" class="active">Status</a>
     </nav>
@@ -219,6 +233,17 @@
         btn.disabled = false;
       }
     }
+
+    // Check for updates on page load
+    fetch('/update/check').then(function(r) { return r.json(); }).then(function(d) {
+      if (d.available) {
+        var btn = document.getElementById('update-btn');
+        btn.textContent = 'Update available';
+        btn.style.background = 'var(--text)';
+        btn.style.color = '#fff';
+        btn.style.borderColor = 'var(--text)';
+      }
+    }).catch(function() {});
   </script>
 
   <footer class="app-footer">
