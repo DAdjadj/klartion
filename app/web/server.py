@@ -386,11 +386,25 @@ def status():
         fun_message=fun_message,
     )
 
+_sync_running = False
+
 @app.route("/sync/now", methods=["POST"])
 def sync_now():
+    global _sync_running
     import threading
-    threading.Thread(target=sync.run, daemon=True).start()
+    _sync_running = True
+    def _run():
+        global _sync_running
+        try:
+            sync.run()
+        finally:
+            _sync_running = False
+    threading.Thread(target=_run, daemon=True).start()
     return jsonify({"ok": True})
+
+@app.route("/api/sync-status")
+def sync_status():
+    return jsonify({"running": _sync_running})
 
 @app.route("/sync/reset", methods=["POST"])
 def sync_reset():
