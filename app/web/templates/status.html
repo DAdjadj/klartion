@@ -79,13 +79,13 @@
         <span class="stat-label">Notifications</span>
         <span class="stat-value">{{ notify_email }}</span>
       </div>
-      {% if total_tx > 0 %}
+      {% if total_tx >= 0 %}
       <div class="stat-row">
         <span class="stat-label">Transactions synced</span>
         <span class="stat-value">{{ total_tx }}</span>
       </div>
       {% endif %}
-      {% if streak > 1 %}
+      {% if streak > 0 %}
       <div class="stat-row">
         <span class="stat-label">Sync streak</span>
         <span class="stat-value">{{ streak }} in a row</span>
