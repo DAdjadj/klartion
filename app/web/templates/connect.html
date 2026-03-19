@@ -164,7 +164,7 @@
       const dd = document.getElementById('bank-dropdown');
       if (!query.trim()) { dd.style.display = 'none'; return; }
       const q = query.toLowerCase();
-      const matches = allBanks.filter(b => b.name.toLowerCase().includes(q) || b.country.toLowerCase().includes(q)).slice(0, 40);
+      const matches = allBanks.filter(b => b.name.toLowerCase().includes(q) || b.country.toLowerCase().includes(q)).slice(0, 200);
       if (!matches.length) { dd.style.display = 'none'; return; }
       dd.innerHTML = matches.map(b => `<div onclick="selectBank('${b.name.replace(/'/g, "\\'")}','${b.country}')" style="padding:9px 12px; cursor:pointer; font-size:13px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #f0efeb;" onmouseover="this.style.background='#f7f6f3'" onmouseout="this.style.background=''"><span>${b.name}</span><span style="font-size:11px; color:#9ca3af; font-family:monospace;">${b.country}</span></div>`).join('');
       dd.style.display = 'block';
