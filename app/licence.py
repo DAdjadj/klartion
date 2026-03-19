@@ -82,3 +82,25 @@ def validate(key=None):
     except requests.RequestException as e:
         logger.warning("Licence check failed (network): %s", e)
         return {"valid": True, "error": None, "offline": True}
+
+def get_activation_info():
+    key = config.LICENCE_KEY
+    if not key:
+        return {"usage": 0, "limit": 2, "is_trial": False, "expires_at": None}
+    try:
+        resp = requests.post(
+            LICENCE_BASE + "/info",
+            json={"license_key": key},
+            timeout=5,
+        )
+        if resp.status_code == 200:
+            d = resp.json()
+            return {
+                "usage": d.get("activation_usage", 0),
+                "limit": d.get("activation_limit", 2),
+                "is_trial": d.get("is_trial", False),
+                "expires_at": d.get("expires_at"),
+            }
+    except Exception:
+        pass
+    return {"usage": 0, "limit": 2, "is_trial": False, "expires_at": None}

@@ -35,6 +35,12 @@
       {% endif %}
     {% endif %}
 
+    {% if is_trial and trial_expires_at %}
+    <div class="alert alert-warn">
+      You are on a free trial — expires {{ trial_expires_at }}. <a href="https://klartion.com" target="_blank" style="color:inherit; font-weight:600;">Purchase a licence →</a>
+    </div>
+    {% endif %}
+
     <div class="card">
       <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1.5rem;">
         <div>
