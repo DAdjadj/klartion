@@ -320,23 +320,9 @@ def status():
     if not val.get("valid") and not val.get("offline"):
         licence_sync_failed = True
 
-    activation_usage = 0
-    activation_limit = 2
-    try:
-        import requests as _requests
-        key = _cfg().LICENCE_KEY
-        if key:
-            resp = _requests.post(
-                "https://api.klartion.com/info",
-                json={"license_key": key},
-                timeout=5
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                activation_usage = data.get("activation_usage", 0)
-                activation_limit = data.get("activation_limit", 2)
-    except Exception:
-        pass
+    act_info = licence.get_activation_info()
+    activation_usage = act_info["usage"]
+    activation_limit = act_info["limit"]
 
     # Fun stats
     import random
@@ -377,6 +363,8 @@ def status():
         notify_email=_cfg().NOTIFY_EMAIL,
         activation_usage=activation_usage,
         activation_limit=activation_limit,
+        is_trial=act_info.get("is_trial", False),
+        trial_expires_at=act_info.get("expires_at", "")[:10] if act_info.get("expires_at") else None,
         licence_sync_failed=licence_sync_failed,
         licence_limit_reached=(licence_sync_failed and activation_usage >= activation_limit and activation_limit > 0),
         page=log_data["page"],

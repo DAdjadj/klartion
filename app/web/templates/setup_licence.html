@@ -25,7 +25,11 @@
       <div class="card-title">Welcome to Klartion</div>
       <div class="card-sub">Step 1 of 6 — enter your license key to get started</div>
       {% if error %}
-        <div class="alert alert-error">{{ error }}</div>
+        {% if 'expired' in error|lower %}
+          <div class="alert alert-error">Your free trial has expired. <a href="https://klartion.com" target="_blank" style="color:inherit; font-weight:600;">Purchase a licence to continue →</a></div>
+        {% else %}
+          <div class="alert alert-error">{{ error }}</div>
+        {% endif %}
       {% endif %}
       <form method="POST">
         <label for="license_key" style="margin-top:0;">License key</label>
@@ -40,7 +44,7 @@
           required
         >
         <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">
-          Don't have one? <a href="https://klartion.com" style="color:var(--muted);">Purchase at klartion.com →</a>
+          Don't have one? <a href="https://klartion.com" style="color:var(--muted);">Purchase at klartion.com</a> or <a href="https://klartion.com" style="color:var(--muted);">start a free trial →</a>
         </div>
         <button class="btn btn-primary" type="submit">Continue →</button>
       </form>
