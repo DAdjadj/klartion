@@ -59,11 +59,11 @@
         }
         </script>
         <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">For iCloud: use an app-specific password from <a href="https://appleid.apple.com" target="_blank" style="color:var(--muted);">appleid.apple.com</a></div>
-        <button class="btn btn-primary" type="submit">Continue</button>
         {% if smtp_user and smtp_password %}
         <button type="button" class="btn btn-ghost" id="test-email-btn" onclick="sendTestEmail()" style="font-size:12px;margin-top:0.5rem;">Send test email</button>
-        {% endif %}
         <div id="test-email-msg" style="font-size:12px;margin-top:6px;min-height:18px;"></div>
+        {% endif %}
+        <button class="btn btn-primary" type="submit">Continue</button>
       </form>
     </div>
     <nav class="footer-nav">
