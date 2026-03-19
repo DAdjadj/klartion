@@ -372,6 +372,7 @@ def status():
         days_left=days_left,
         last_sync=last_sync,
         sync_time=_cfg().SYNC_TIME,
+        sync_frequency=_cfg().SYNC_FREQUENCY or "24",
         notify_email=_cfg().NOTIFY_EMAIL,
         activation_usage=activation_usage,
         activation_limit=activation_limit,
