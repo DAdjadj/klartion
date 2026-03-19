@@ -373,6 +373,7 @@ def status():
         last_sync=last_sync,
         sync_time=_cfg().SYNC_TIME,
         sync_frequency=_cfg().SYNC_FREQUENCY or "24",
+        sync_times=_get_sync_times(),
         notify_email=_cfg().NOTIFY_EMAIL,
         activation_usage=activation_usage,
         activation_limit=activation_limit,
@@ -524,6 +525,16 @@ def banks():
     resp = jsonify(_banks_cache)
     resp.headers["Access-Control-Allow-Origin"] = "*"
     return resp
+
+def _get_sync_times():
+    sync_time = _cfg().SYNC_TIME or "08:00"
+    frequency = int(_cfg().SYNC_FREQUENCY or "24")
+    h, m = int(sync_time.split(":")[0]), int(sync_time.split(":")[1])
+    times = []
+    for i in range(0, 24, frequency):
+        t_h = (h + i) % 24
+        times.append(f"{t_h:02d}:{m:02d}")
+    return ", ".join(times)
 
 def _start_scheduler_if_ready():
     if _is_configured():
