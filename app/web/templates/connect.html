@@ -96,7 +96,7 @@
 
         {% if all_tokens|length >= bank_account_limit %}
         <div style="padding:14px; background:var(--surface); border:1px solid var(--border); border-radius:8px; font-size:13px; color:var(--muted); text-align:center;">
-          Bank account limit reached. <a href="{{ bank_slot_url }}" target="_blank" style="color:var(--text); font-weight:600;">Add more →</a>
+          Bank account limit reached. <a href="{{ bank_slot_url }}" target="_blank" style="color:var(--text); font-weight:600;">Add 1 more →</a>
         </div>
         {% else %}
         <form method="POST" id="connect-form">
