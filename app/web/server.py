@@ -281,6 +281,23 @@ def reauthorise():
         sync_time=_cfg().SYNC_TIME,
     )
 
+def _finalize_bank_connection(result, account_uid):
+    """Save bank tokens, clear pending settings, start scheduler and sync."""
+    db.save_tokens(
+        session_id=result["session_id"],
+        access_token=account_uid,
+        bank_name=result["bank_name"],
+        bank_country=result["bank_country"],
+        expires_at=result.get("valid_until", ""),
+    )
+    db.set_setting("pending_session_id", "")
+    db.set_setting("pending_bank_name", "")
+    db.set_setting("pending_bank_country", "")
+    db.set_setting("pending_valid_until", "")
+    _start_scheduler_if_ready()
+    import threading
+    threading.Thread(target=sync.run, daemon=True).start()
+
 @app.route("/callback")
 def callback():
     error = request.args.get("error")
@@ -291,17 +308,54 @@ def callback():
     if not code:
         return redirect(url_for("connect") + "?error=missing_code")
     try:
-        ok = enablebanking.complete_auth(code=code, state=state)
-        if ok:
-            _start_scheduler_if_ready()
-            import threading
-            threading.Thread(target=sync.run, daemon=True).start()
+        result = enablebanking.complete_auth(code=code, state=state)
+        accounts = result["accounts"]
+        if len(accounts) == 1:
+            account_uid = enablebanking.extract_account_uid(accounts[0])
+            _finalize_bank_connection(result, account_uid)
             return redirect(url_for("status"))
         else:
-            return redirect(url_for("connect") + "?error=auth_failed")
+            import json
+            db.set_setting("pending_auth_session_id", result["session_id"])
+            db.set_setting("pending_auth_accounts", json.dumps(accounts))
+            db.set_setting("pending_auth_valid_until", result.get("valid_until", ""))
+            db.set_setting("pending_auth_bank_name", result.get("bank_name", ""))
+            db.set_setting("pending_auth_bank_country", result.get("bank_country", ""))
+            return redirect(url_for("pick_account"))
     except Exception as e:
         logger.error("Callback auth failed: %s", e)
         return redirect(url_for("connect") + "?error=" + str(e))
+
+@app.route("/pick-account")
+def pick_account():
+    import json
+    accounts_json = db.get_setting("pending_auth_accounts")
+    if not accounts_json:
+        return redirect(url_for("connect"))
+    accounts = json.loads(accounts_json)
+    return render_template("pick_account.html", accounts=accounts)
+
+@app.route("/pick-account", methods=["POST"])
+def pick_account_post():
+    import json
+    account_uid = request.form.get("account_uid")
+    if not account_uid:
+        return redirect(url_for("pick_account"))
+    session_id   = db.get_setting("pending_auth_session_id")
+    valid_until  = db.get_setting("pending_auth_valid_until")
+    bank_name    = db.get_setting("pending_auth_bank_name") or db.get_setting("pending_bank_name")
+    bank_country = db.get_setting("pending_auth_bank_country") or db.get_setting("pending_bank_country")
+    result = {
+        "session_id": session_id,
+        "bank_name": bank_name,
+        "bank_country": bank_country,
+        "valid_until": valid_until,
+    }
+    _finalize_bank_connection(result, account_uid)
+    for key in ["pending_auth_session_id", "pending_auth_accounts", "pending_auth_valid_until",
+                "pending_auth_bank_name", "pending_auth_bank_country"]:
+        db.set_setting(key, "")
+    return redirect(url_for("status"))
 
 @app.route("/status")
 def status():
