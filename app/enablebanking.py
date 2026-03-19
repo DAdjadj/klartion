@@ -90,7 +90,10 @@ def start_auth(bank_name: str, bank_country: str) -> dict:
     logger.info("Auth session started: %s for %s (%s)", session_id, bank_name, bank_country)
     return {"session_id": session_id, "url": auth_url}
 
-def complete_auth(code: str, state: str) -> bool:
+def extract_account_uid(account):
+    return account.get("uid") or account.get("account_uid") or account.get("resource_id") or ""
+
+def complete_auth(code: str, state: str) -> dict:
     bank_name    = db.get_setting("pending_bank_name")
     bank_country = db.get_setting("pending_bank_country")
     valid_until  = db.get_setting("pending_valid_until") or ""
@@ -116,29 +119,14 @@ def complete_auth(code: str, state: str) -> bool:
     if not accounts:
         raise ValueError("No accounts returned. Check your bank connection.")
 
-    account = accounts[0]
-    account_uid = (
-        account.get("uid")
-        or account.get("account_uid")
-        or account.get("resource_id")
-        or ""
-    )
-
-    db.save_tokens(
-        session_id=session_id,
-        access_token=account_uid,
-        bank_name=bank_name,
-        bank_country=bank_country,
-        expires_at=valid_until,
-    )
-
-    db.set_setting("pending_session_id", "")
-    db.set_setting("pending_bank_name", "")
-    db.set_setting("pending_bank_country", "")
-    db.set_setting("pending_valid_until", "")
-
-    logger.info("Auth completed for %s (%s), account_uid=%s", bank_name, bank_country, account_uid)
-    return True
+    logger.info("Auth completed for %s (%s), %d account(s) returned", bank_name, bank_country, len(accounts))
+    return {
+        "session_id": session_id,
+        "accounts": accounts,
+        "bank_name": bank_name,
+        "bank_country": bank_country,
+        "valid_until": valid_until,
+    }
 
 def get_accounts(session_id: str) -> list:
     resp = requests.get(
