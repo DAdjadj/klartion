@@ -144,6 +144,48 @@ def test_email():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/email/unsubscribe-status")
+def unsubscribe_status():
+    email = _cfg().NOTIFY_EMAIL
+    if not email:
+        return jsonify({"unsubscribed": False})
+    try:
+        import requests as _requests
+        resp = _requests.post("https://api.klartion.com/is-unsubscribed", json={"email": email}, timeout=5)
+        return jsonify({"unsubscribed": resp.ok and resp.json().get("unsubscribed", False)})
+    except Exception:
+        return jsonify({"unsubscribed": False})
+
+@app.route("/email/unsubscribe", methods=["POST"])
+def unsubscribe_email():
+    email = _cfg().NOTIFY_EMAIL
+    if not email:
+        return jsonify({"error": "No notification email configured"}), 400
+    try:
+        import requests as _requests
+        resp = _requests.get(f"https://api.klartion.com/unsubscribe?email={email}", timeout=5)
+        if resp.ok:
+            return jsonify({"ok": True})
+        return jsonify({"error": "Failed to unsubscribe"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/email/resubscribe", methods=["POST"])
+def resubscribe_email():
+    email = _cfg().NOTIFY_EMAIL
+    if not email:
+        return jsonify({"error": "No notification email configured"}), 400
+    try:
+        import requests as _requests
+        resp = _requests.post("https://api.klartion.com/resubscribe", json={"email": email}, timeout=5)
+        if resp.ok:
+            from .. import email_notify
+            email_notify._unsubscribed_cache.pop(email, None)
+            return jsonify({"ok": True})
+        return jsonify({"error": "Failed to resubscribe"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/setup/sync", methods=["GET", "POST"])
 def setup_sync():
     error = None

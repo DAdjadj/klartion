@@ -66,6 +66,69 @@
         <button class="btn btn-primary" type="submit">Continue</button>
       </form>
     </div>
+    {% if notify_email %}
+    <div class="card" style="margin-top:1rem;" id="unsub-card">
+      <div class="card-title" style="font-size:14px;">Email preferences</div>
+      <p id="unsub-status" style="font-size:13px;color:var(--muted);margin:0.5rem 0;"></p>
+      <button type="button" class="btn btn-ghost" id="unsub-btn" onclick="toggleUnsubscribe()" style="font-size:12px;" disabled>Loading...</button>
+      <div id="unsub-msg" style="font-size:12px;margin-top:6px;min-height:18px;"></div>
+    </div>
+    <script>
+    var _isUnsub = false;
+    async function checkUnsubStatus() {
+      try {
+        var res = await fetch('/email/unsubscribe-status');
+        var data = await res.json();
+        _isUnsub = data.unsubscribed;
+        updateUnsubUI();
+      } catch(e) {
+        document.getElementById('unsub-status').textContent = 'Could not check email status.';
+        document.getElementById('unsub-btn').style.display = 'none';
+      }
+    }
+    function updateUnsubUI() {
+      var btn = document.getElementById('unsub-btn');
+      var status = document.getElementById('unsub-status');
+      btn.disabled = false;
+      if (_isUnsub) {
+        status.textContent = 'You are unsubscribed from all Klartion emails (sync notifications, trial reminders, and product updates).';
+        btn.textContent = 'Re-enable emails';
+        btn.className = 'btn btn-ghost';
+      } else {
+        status.textContent = 'You are currently receiving email notifications.';
+        btn.textContent = 'Stop all emails';
+        btn.className = 'btn btn-ghost';
+        btn.style.color = '#dc2626';
+      }
+    }
+    async function toggleUnsubscribe() {
+      var btn = document.getElementById('unsub-btn');
+      var msg = document.getElementById('unsub-msg');
+      btn.disabled = true;
+      btn.textContent = _isUnsub ? 'Re-enabling...' : 'Unsubscribing...';
+      try {
+        var endpoint = _isUnsub ? '/email/resubscribe' : '/email/unsubscribe';
+        var res = await fetch(endpoint, { method: 'POST' });
+        var data = await res.json();
+        if (res.ok) {
+          _isUnsub = !_isUnsub;
+          updateUnsubUI();
+          msg.textContent = _isUnsub ? 'You have been unsubscribed from all emails.' : 'Emails have been re-enabled.';
+          msg.style.color = '#2d7a4f';
+        } else {
+          msg.textContent = data.error || 'Something went wrong.';
+          msg.style.color = '#dc2626';
+          btn.disabled = false;
+        }
+      } catch(e) {
+        msg.textContent = 'Request failed.';
+        msg.style.color = '#dc2626';
+        btn.disabled = false;
+      }
+    }
+    checkUnsubStatus();
+    </script>
+    {% endif %}
     <nav class="footer-nav">
       <a href="/setup">License</a>
       <a href="/setup/notion">Notion</a>
