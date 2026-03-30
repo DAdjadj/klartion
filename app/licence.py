@@ -37,7 +37,9 @@ def activate(key):
             return {"valid": False, "error": msg}
     except requests.RequestException as e:
         logger.warning("Licence activate failed (network): %s", e)
-        return {"valid": True, "error": None, "offline": True}
+        if db.get_setting("licence_key") == key:
+            return {"valid": True, "error": None, "offline": True}
+        return {"valid": False, "error": "Could not reach the licence server. Check your internet connection and try again."}
 
 def deactivate():
     key = config.LICENCE_KEY
@@ -81,12 +83,14 @@ def validate(key=None):
             return {"valid": False, "error": msg}
     except requests.RequestException as e:
         logger.warning("Licence check failed (network): %s", e)
-        return {"valid": True, "error": None, "offline": True}
+        if db.get_setting("licence_key") == key:
+            return {"valid": True, "error": None, "offline": True}
+        return {"valid": False, "error": "Could not reach the licence server. Check your internet connection."}
 
 def get_activation_info():
     key = config.LICENCE_KEY
     if not key:
-        return {"usage": 0, "limit": 2, "is_trial": False, "expires_at": None}
+        return {"usage": 0, "limit": 2, "bank_account_limit": 2, "is_trial": False, "expires_at": None}
     try:
         resp = requests.post(
             LICENCE_BASE + "/info",
@@ -98,9 +102,10 @@ def get_activation_info():
             return {
                 "usage": d.get("activation_usage", 0),
                 "limit": d.get("activation_limit", 2),
+                "bank_account_limit": d.get("bank_account_limit", 2),
                 "is_trial": d.get("is_trial", False),
                 "expires_at": d.get("expires_at"),
             }
     except Exception:
         pass
-    return {"usage": 0, "limit": 2, "is_trial": False, "expires_at": None}
+    return {"usage": 0, "limit": 2, "bank_account_limit": 2, "is_trial": False, "expires_at": None}

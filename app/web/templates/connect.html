@@ -95,6 +95,7 @@
           <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--hint);">
             <span>Expires {{ t.expires_at[:10] }}</span>
             <form method="POST" action="/connect/reauthorise" style="display:inline;">
+              <input type="hidden" name="token_id" value="{{ t.id }}">
               <input type="hidden" name="bank_name" value="{{ t.bank_name }}">
               <input type="hidden" name="bank_country" value="{{ t.bank_country }}">
               <button type="submit" style="background:none; border:none; color:var(--muted); cursor:pointer; font-size:11px; text-decoration:underline;">Re-authorise</button>

@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from . import config, db, sync
 
 logger = logging.getLogger(__name__)
+_started = False
 
 def _should_catchup(frequency_hours) -> bool:
     last = db.get_last_sync()
@@ -30,8 +31,10 @@ def get_job_count():
     return len(schedule.jobs)
 
 def start():
+    global _started
     sync_time = config.SYNC_TIME or "08:00"
     frequency = int(getattr(config, 'SYNC_FREQUENCY', '24') or '24')
+    schedule.clear()
 
     logger.info("Scheduler starting. Sync at %s, every %dh", sync_time, frequency)
 
@@ -54,11 +57,12 @@ def start():
         logger.info("Catch-up sync needed. Running now.")
         threading.Thread(target=sync.run, daemon=True).start()
 
-    def loop():
-        while True:
-            schedule.run_pending()
-            time.sleep(60)
-
-    thread = threading.Thread(target=loop, daemon=True)
-    thread.start()
+    if not _started:
+        _started = True
+        def loop():
+            while True:
+                schedule.run_pending()
+                time.sleep(60)
+        thread = threading.Thread(target=loop, daemon=True)
+        thread.start()
     logger.info("Scheduler running.")

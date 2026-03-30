@@ -47,16 +47,31 @@ def init():
             value TEXT
         );
     """)
+    try:
+        conn.execute("ALTER TABLE tokens ADD COLUMN start_sync_date TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE tokens ADD COLUMN last_sync_at TEXT")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
 
-def save_tokens(session_id, access_token, bank_name, bank_country, expires_at, user_id="default"):
+def save_tokens(session_id, access_token, bank_name, bank_country, expires_at, user_id="default", token_id=None, start_sync_date=""):
     conn = get_conn()
-    conn.execute("""
-        INSERT INTO tokens (user_id, access_token, session_id, bank_name, bank_country, expires_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT DO NOTHING
-    """, (user_id, access_token, session_id, bank_name, bank_country, expires_at))
+    if token_id:
+        conn.execute("""
+            UPDATE tokens
+            SET access_token = ?, session_id = ?, bank_name = ?, bank_country = ?, expires_at = ?,
+                start_sync_date = CASE WHEN ? <> '' THEN ? ELSE start_sync_date END
+            WHERE id = ?
+        """, (access_token, session_id, bank_name, bank_country, expires_at, start_sync_date, start_sync_date, token_id))
+    else:
+        conn.execute("""
+            INSERT INTO tokens (user_id, access_token, session_id, bank_name, bank_country, expires_at, start_sync_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (user_id, access_token, session_id, bank_name, bank_country, expires_at, start_sync_date))
     conn.commit()
     conn.close()
 
@@ -88,11 +103,17 @@ def clear_token_by_id(token_id):
     conn.commit()
     conn.close()
 
-def get_known_tx_ids(user_id="default"):
+def get_known_tx_ids(user_id="default", tx_id_prefix=None):
     conn = get_conn()
-    rows = conn.execute(
-        "SELECT tx_id FROM transactions WHERE user_id = ?", (user_id,)
-    ).fetchall()
+    if tx_id_prefix:
+        rows = conn.execute(
+            "SELECT tx_id FROM transactions WHERE user_id = ? AND tx_id LIKE ?",
+            (user_id, f"{tx_id_prefix}%")
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT tx_id FROM transactions WHERE user_id = ?", (user_id,)
+        ).fetchall()
     conn.close()
     return {r["tx_id"] for r in rows}
 
@@ -109,13 +130,32 @@ def upsert_transaction(tx_id, notion_page_id, status, user_id="default"):
     conn.commit()
     conn.close()
 
-def get_pending_transactions(user_id="default"):
+def get_pending_transactions(user_id="default", tx_id_prefix=None):
     conn = get_conn()
-    rows = conn.execute(
-        "SELECT * FROM transactions WHERE user_id = ? AND status = 'pending'", (user_id,)
-    ).fetchall()
+    if tx_id_prefix:
+        rows = conn.execute(
+            "SELECT * FROM transactions WHERE user_id = ? AND LOWER(status) = 'pending' AND tx_id LIKE ?",
+            (user_id, f"{tx_id_prefix}%")
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM transactions WHERE user_id = ? AND LOWER(status) = 'pending'",
+            (user_id,)
+        ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+def update_token_fields(token_id, **fields):
+    allowed = {"access_token", "session_id", "bank_name", "bank_country", "expires_at", "start_sync_date", "last_sync_at"}
+    updates = {key: value for key, value in fields.items() if key in allowed}
+    if not updates:
+        return
+    conn = get_conn()
+    assignments = ", ".join(f"{key} = ?" for key in updates)
+    params = list(updates.values()) + [token_id]
+    conn.execute(f"UPDATE tokens SET {assignments} WHERE id = ?", params)
+    conn.commit()
+    conn.close()
 
 def log_sync(status, tx_count=0, message="", user_id="default"):
     conn = get_conn()

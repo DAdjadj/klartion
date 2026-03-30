@@ -31,6 +31,13 @@ def _is_configured():
 def _is_connected():
     return db.get_tokens() is not None
 
+def _get_bank_account_limit():
+    try:
+        info = licence.get_activation_info()
+        return max(1, int(info.get("bank_account_limit", 2) or 2))
+    except Exception:
+        return 2
+
 @app.route("/")
 def index():
     if not _is_configured():
@@ -334,10 +341,13 @@ def connect():
             start_sync_date = request.form.get("start_sync_date", "").strip()
             if not bank_name or not bank_country:
                 error = "Please select a bank."
+            elif len(db.get_all_tokens()) >= _get_bank_account_limit():
+                error = "Bank account limit reached. Disconnect a bank or add another slot before connecting a new one."
             else:
                 try:
                     if start_sync_date:
                         db.set_setting("pending_start_sync_date", start_sync_date)
+                    db.set_setting("pending_reauth_token_id", "")
                     # Update KLARTION_URL from current request so the OAuth
                     # callback redirects back through the same scheme (HTTPS via Caddy)
                     scheme = request.headers.get("X-Forwarded-Proto", request.scheme)
@@ -353,6 +363,8 @@ def connect():
             db.set_setting("pending_session_id", "")
             db.set_setting("pending_bank_name", "")
             db.set_setting("pending_bank_country", "")
+            db.set_setting("pending_start_sync_date", "")
+            db.set_setting("pending_reauth_token_id", "")
             return redirect(url_for("connect"))
 
     import glob
@@ -362,16 +374,7 @@ def connect():
     pem_ready  = bool(glob.glob("/app/data/*.pem"))
 
     # Fetch bank account limit from licence API
-    bank_account_limit = 2
-    try:
-        import requests as _requests
-        key = _cfg().LICENCE_KEY
-        if key:
-            resp = _requests.post("https://api.klartion.com/info", json={"license_key": key}, timeout=5)
-            if resp.status_code == 200:
-                bank_account_limit = resp.json().get("bank_account_limit", 2)
-    except Exception:
-        pass
+    bank_account_limit = _get_bank_account_limit()
 
     from datetime import date
     return render_template("connect.html",
@@ -391,11 +394,14 @@ def connect():
 
 @app.route("/connect/reauthorise", methods=["POST"])
 def reauthorise():
+    token_id = request.form.get("token_id", "").strip()
     bank_name    = request.form.get("bank_name", "").strip()
     bank_country = request.form.get("bank_country", "").strip()
     if not bank_name or not bank_country:
         return redirect(url_for("connect"))
     try:
+        db.set_setting("pending_start_sync_date", "")
+        db.set_setting("pending_reauth_token_id", token_id)
         result   = enablebanking.start_auth(bank_name, bank_country)
         auth_url = result["url"]
     except Exception as e:
@@ -412,17 +418,34 @@ def reauthorise():
 
 def _finalize_bank_connection(result, account_uid):
     """Save bank tokens, clear pending settings, start scheduler and sync."""
-    db.save_tokens(
-        session_id=result["session_id"],
-        access_token=account_uid,
-        bank_name=result["bank_name"],
-        bank_country=result["bank_country"],
-        expires_at=result.get("valid_until", ""),
-    )
+    reauth_token_id = (db.get_setting("pending_reauth_token_id") or "").strip()
+    if reauth_token_id:
+        db.save_tokens(
+            session_id=result["session_id"],
+            access_token=account_uid,
+            bank_name=result["bank_name"],
+            bank_country=result["bank_country"],
+            expires_at=result.get("valid_until", ""),
+            token_id=int(reauth_token_id),
+        )
+    else:
+        start_sync_date = db.get_setting("pending_start_sync_date") or ""
+        if len(db.get_all_tokens()) >= _get_bank_account_limit():
+            raise ValueError("Bank account limit reached. Disconnect a bank or add another slot before connecting a new one.")
+        db.save_tokens(
+            session_id=result["session_id"],
+            access_token=account_uid,
+            bank_name=result["bank_name"],
+            bank_country=result["bank_country"],
+            expires_at=result.get("valid_until", ""),
+            start_sync_date=start_sync_date,
+        )
     db.set_setting("pending_session_id", "")
     db.set_setting("pending_bank_name", "")
     db.set_setting("pending_bank_country", "")
     db.set_setting("pending_valid_until", "")
+    db.set_setting("pending_start_sync_date", "")
+    db.set_setting("pending_reauth_token_id", "")
     _start_scheduler_if_ready()
     import threading
     threading.Thread(target=sync.run, daemon=True).start()
@@ -480,7 +503,10 @@ def pick_account_post():
         "bank_country": bank_country,
         "valid_until": valid_until,
     }
-    _finalize_bank_connection(result, account_uid)
+    try:
+        _finalize_bank_connection(result, account_uid)
+    except Exception as e:
+        return redirect(url_for("connect") + "?error=" + str(e))
     for key in ["pending_auth_session_id", "pending_auth_accounts", "pending_auth_valid_until",
                 "pending_auth_bank_name", "pending_auth_bank_country"]:
         db.set_setting(key, "")
@@ -644,14 +670,10 @@ def reset_sync():
     token_id   = request.form.get("token_id")
     reset_date = request.form.get("reset_date", "").strip()
     if token_id:
-        conn = db.get_conn()
-        # Clear all synced transactions so they re-import from the new date
-        conn.execute("DELETE FROM transactions")
-        conn.commit()
-        conn.close()
-        # Update the sync start date in settings
+        updates = {"last_sync_at": ""}
         if reset_date:
-            db.set_setting("start_sync_date", reset_date)
+            updates["start_sync_date"] = reset_date
+        db.update_token_fields(int(token_id), **updates)
         logger.info("Reset sync state for token %s (start_date=%s)", token_id, reset_date)
     return redirect(url_for("connect"))
 

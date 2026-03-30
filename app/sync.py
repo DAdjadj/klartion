@@ -4,6 +4,12 @@ from . import config, db, enablebanking, notion, email_notify, licence
 
 logger = logging.getLogger(__name__)
 
+def _is_booked_status(status: str) -> bool:
+    return (status or "").upper() in {"BOOK", "BOOKED"}
+
+def _scoped_tx_id(account_uid: str, tx: dict) -> str:
+    return f"{account_uid}:{_get_tx_id(tx)}"
+
 def run():
     """
     Main sync orchestrator. Called by the scheduler daily.
@@ -34,6 +40,7 @@ def run():
 
     for tokens in all_tokens:
         bank_label = f"{tokens.get('bank_name', 'Unknown')} ({tokens.get('bank_country', '')})"
+        token_id = tokens["id"]
         session_id = tokens["session_id"]
         account_uid = tokens.get("access_token")
 
@@ -52,10 +59,11 @@ def run():
             continue
 
         # 4. Determine date range
-        last_sync = db.get_last_sync()
-        start_sync_date = db.get_setting("start_sync_date") or db.get_setting("pending_start_sync_date")
-        if last_sync:
-            date_from = (datetime.fromisoformat(last_sync) - timedelta(days=2)).strftime("%Y-%m-%d")
+        last_sync_at = tokens.get("last_sync_at")
+        start_sync_date = tokens.get("start_sync_date") or db.get_setting("start_sync_date")
+        if last_sync_at:
+            parsed_last_sync = datetime.fromisoformat(last_sync_at.replace("Z", "+00:00") if "Z" in last_sync_at else last_sync_at)
+            date_from = (parsed_last_sync - timedelta(days=2)).strftime("%Y-%m-%d")
         elif start_sync_date:
             date_from = start_sync_date
         else:
@@ -77,12 +85,13 @@ def run():
         logger.info("Fetched %d transactions from %s", len(all_transactions), bank_label)
 
         # 6. Deduplicate
-        known_ids = db.get_known_tx_ids()
-        new_transactions = [t for t in all_transactions if _get_tx_id(t) not in known_ids]
+        tx_prefix = f"{account_uid}:"
+        known_ids = db.get_known_tx_ids(tx_id_prefix=tx_prefix)
+        new_transactions = [t for t in all_transactions if _scoped_tx_id(account_uid, t) not in known_ids]
         logger.info("%d new transactions after deduplication", len(new_transactions))
 
         # 7. Reconcile pending
-        _reconcile_pending(all_transactions)
+        _reconcile_pending(account_uid, all_transactions)
 
         # 8. Write to Notion
         written = 0
@@ -92,14 +101,15 @@ def run():
                 normalised["bank_name"] = tokens.get("bank_name", "")
                 notion_page_id = notion.write_transaction(normalised)
                 db.upsert_transaction(
-                    tx_id=normalised["tx_id"],
+                    tx_id=_scoped_tx_id(account_uid, tx),
                     notion_page_id=notion_page_id,
-                    status=normalised["status"],
+                    status=normalised["status"].lower(),
                 )
                 written += 1
             except Exception as e:
                 logger.error("Failed to write transaction %s: %s", _get_tx_id(tx), e)
 
+        db.update_token_fields(token_id, last_sync_at=datetime.now(timezone.utc).isoformat())
         total_written += written
         logger.info("Synced %d transactions from %s", written, bank_label)
 
@@ -123,17 +133,17 @@ def run():
     return len(errors) == 0, total_written, "OK"
 
 
-def _reconcile_pending(all_transactions: list):
+def _reconcile_pending(account_uid: str, all_transactions: list):
     """
     Check previously imported pending transactions against the new batch.
     Update Notion rows that have been cleared or cancelled.
     """
-    pending = db.get_pending_transactions()
+    pending = db.get_pending_transactions(tx_id_prefix=f"{account_uid}:")
     if not pending:
         return
 
-    booked_ids  = {_get_tx_id(t) for t in all_transactions if t.get("status") == "booked"}
-    fetched_ids = {_get_tx_id(t) for t in all_transactions}
+    booked_ids  = {_scoped_tx_id(account_uid, t) for t in all_transactions if _is_booked_status(t.get("status"))}
+    fetched_ids = {_scoped_tx_id(account_uid, t) for t in all_transactions}
 
     for record in pending:
         tx_id          = record["tx_id"]
@@ -193,7 +203,7 @@ def _normalise(tx: dict) -> dict:
     reference = tx.get("remittance_information_unstructured") or tx.get("end_to_end_id") or ""
     category  = (tx.get("bank_transaction_code") or {}).get("code") or tx.get("proprietary_bank_transaction_code") or "Uncategorised"
     date      = tx.get("booking_date") or tx.get("value_date") or ""
-    status    = "Cleared" if tx.get("status") in ("booked", "BOOK") else "Pending"
+    status    = "Cleared" if _is_booked_status(tx.get("status")) else "Pending"
 
     return {
         "tx_id":     _get_tx_id(tx),
