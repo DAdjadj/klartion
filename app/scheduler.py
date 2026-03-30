@@ -26,13 +26,18 @@ def _parse_time(time_str):
     parts = time_str.split(":")
     return int(parts[0]), int(parts[1])
 
+def get_job_count():
+    return len(schedule.jobs)
+
 def start():
     sync_time = config.SYNC_TIME or "08:00"
     frequency = int(getattr(config, 'SYNC_FREQUENCY', '24') or '24')
 
     logger.info("Scheduler starting. Sync at %s, every %dh", sync_time, frequency)
 
-    if frequency == 24:
+    if frequency == 0:
+        logger.info("Sync frequency set to manual — no automatic syncs scheduled.")
+    elif frequency == 24:
         schedule.every().day.at(sync_time).do(_run_sync)
     else:
         # Schedule every N hours starting from SYNC_TIME
@@ -45,7 +50,7 @@ def start():
             schedule.every().day.at(t).do(_run_sync)
         logger.info("Sync times: %s", ", ".join(times))
 
-    if _should_catchup(frequency):
+    if frequency > 0 and _should_catchup(frequency):
         logger.info("Catch-up sync needed. Running now.")
         threading.Thread(target=sync.run, daemon=True).start()
 

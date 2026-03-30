@@ -1,4 +1,5 @@
 import logging
+import os
 from flask import Flask, render_template, request, redirect, session, url_for, jsonify
 from .. import db, enablebanking, licence, sync
 
@@ -8,6 +9,11 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 
 CONTAINER_NAME = "klartion"
 IMAGE_NAME = "daalves/klartion:latest"
+APP_VERSION = os.environ.get("APP_VERSION", "dev")
+
+@app.context_processor
+def inject_globals():
+    return {"app_version": APP_VERSION}
 
 @app.before_request
 def load_secret_key():
@@ -242,7 +248,50 @@ def deactivate_licence():
 
 @app.route("/health")
 def health():
-    return jsonify({"status": "ok"})
+    from datetime import datetime, timezone, timedelta
+    status = "ok"
+    details = {}
+
+    # Check last sync (overdue if > frequency + 2h)
+    try:
+        last_sync = db.get_last_sync()
+        details["last_sync"] = last_sync or None
+        if last_sync:
+            last_dt = datetime.fromisoformat(last_sync.replace("Z", "+00:00") if "Z" in last_sync else last_sync)
+            frequency_h = int(_cfg().SYNC_FREQUENCY or 24)
+            overdue_threshold = timedelta(hours=frequency_h + 2)
+            age = datetime.now(timezone.utc) - last_dt.replace(tzinfo=timezone.utc) if last_dt.tzinfo is None else datetime.now(timezone.utc) - last_dt
+            if age > overdue_threshold:
+                details["sync_overdue"] = True
+                status = "degraded"
+    except Exception:
+        pass
+
+    # Check bank connection and token expiry
+    try:
+        all_tokens = db.get_all_tokens()
+        details["banks_connected"] = len(all_tokens)
+        days_left = enablebanking.check_token_expiry()
+        if days_left is not None:
+            details["token_expires_in_days"] = days_left
+            if days_left <= 0:
+                status = "degraded"
+    except Exception:
+        pass
+
+    # Scheduler job count
+    try:
+        from ..scheduler import get_job_count
+        details["scheduler_jobs"] = get_job_count()
+    except Exception:
+        pass
+
+    details["version"] = APP_VERSION
+    return jsonify({"status": status, **details})
+
+@app.route("/api/version")
+def api_version():
+    return jsonify({"version": APP_VERSION})
 
 @app.route("/api/last-sync")
 def last_sync_api():
@@ -791,7 +840,12 @@ def banks():
 def _get_sync_times():
     sync_time = _cfg().SYNC_TIME or "08:00"
     frequency = int(_cfg().SYNC_FREQUENCY or "24")
-    h, m = int(sync_time.split(":")[0]), int(sync_time.split(":")[1])
+    if frequency == 0:
+        return "Manual only"
+    try:
+        h, m = int(sync_time.split(":")[0]), int(sync_time.split(":")[1])
+    except Exception:
+        h, m = 8, 0
     times = []
     for i in range(0, 24, frequency):
         t_h = (h + i) % 24
