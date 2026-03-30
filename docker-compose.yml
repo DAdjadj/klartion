@@ -9,7 +9,20 @@ services:
       - ./data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
       - .:/compose:ro
+      - ./app/web/server.py:/app/web/server.py:ro
     env_file:
       - .env
-    labels:
-      - "com.centurylinklabs.watchtower.enable=true"
+
+  watchtower:
+    image: containrrr/watchtower
+    container_name: klartion-watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --cleanup --interval 86400 --http-api-update --http-api-periodic-polls klartion
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    environment:
+      - WATCHTOWER_LOG_LEVEL=warn
+      - WATCHTOWER_HTTP_API_TOKEN=klartion-update
