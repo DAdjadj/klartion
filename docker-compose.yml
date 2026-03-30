@@ -9,7 +9,6 @@ services:
       - ./data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
       - .:/compose:ro
-      - ./app/web/server.py:/app/web/server.py:ro
     env_file:
       - .env
 
