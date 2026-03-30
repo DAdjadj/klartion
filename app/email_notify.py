@@ -47,26 +47,29 @@ def send(subject: str, body: str):
         logger.info("Skipping email for unsubscribed %s: %s", config.NOTIFY_EMAIL, subject)
         return
 
+    sender = config.SMTP_FROM or config.SMTP_USER
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"]    = config.SMTP_USER
+    msg["From"]    = sender
     msg["To"]      = config.NOTIFY_EMAIL
     msg.attach(MIMEText(body, "plain"))
 
     try:
-        host = _smtp_host_for(config.SMTP_USER)
+        host = config.SMTP_HOST if (config.SMTP_HOST and config.SMTP_HOST != "smtp.mail.me.com") else _smtp_host_for(config.SMTP_USER)
         port = int(config.SMTP_PORT or 587)
         with smtplib.SMTP(host, port) as server:
             server.ehlo()
             server.starttls()
             server.login(config.SMTP_USER, config.SMTP_PASSWORD)
-            server.sendmail(config.SMTP_USER, config.NOTIFY_EMAIL, msg.as_string())
+            server.sendmail(sender, config.NOTIFY_EMAIL, msg.as_string())
         logger.info("Email sent: %s", subject)
     except Exception as e:
         logger.error("Failed to send email: %s", e)
 
 
 def send_success(tx_count: int):
+    if config.NOTIFY_ON == "errors":
+        return
     send(
         subject=f"Klartion: sync complete",
         body=f"Sync completed successfully. {tx_count} transaction(s) written to Notion."

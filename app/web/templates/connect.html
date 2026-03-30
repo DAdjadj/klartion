@@ -65,19 +65,31 @@
 
         {% if all_tokens %}
         <div style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.8px; color:var(--muted); margin-bottom:0.5rem;">Connected accounts ({{ all_tokens|length }}/{{ bank_account_limit }})</div>
+        <div style="font-size:11px;color:var(--hint);margin-bottom:0.75rem;">Reset sync re-imports transactions from the start date. Existing transactions won't be duplicated.</div>
         {% for t in all_tokens %}
         <div style="margin-bottom:0.75rem; padding:12px 14px; border:1px solid var(--border); border-radius:8px;">
           <div style="display:flex; justify-content:space-between; align-items:center;">
             <div>
               <div class="connected-pill">Connected</div>
               <div style="margin-top:8px; font-family:var(--mono); font-size:12px; color:var(--muted);">
-                {{ t.bank_name }} ({{ t.bank_country }})
+                {{ loop.index }}. {{ t.bank_name }} ({{ t.bank_country }})
               </div>
             </div>
-            <form method="POST" action="/disconnect">
-              <input type="hidden" name="token_id" value="{{ t.id }}">
-              <button type="submit" class="btn btn-danger-ghost">Disconnect</button>
-            </form>
+            <div style="display:flex;gap:6px;">
+              <div>
+                <button type="button" class="btn btn-ghost" style="font-size:11px;padding:6px 10px;" onclick="this.style.display='none';this.nextElementSibling.style.display='flex';" id="reset-btn-{{ t.id }}">Reset sync</button>
+                <form method="POST" action="/reset-sync" style="display:none;gap:4px;align-items:center;" id="reset-form-{{ t.id }}" onsubmit="return confirm('Reset sync for this account? Transactions from the selected date will be re-imported on the next sync.');">
+                  <input type="hidden" name="token_id" value="{{ t.id }}">
+                  <input type="date" name="reset_date" value="{{ today }}" required style="font-size:11px;padding:4px 6px;">
+                  <button type="submit" class="btn btn-ghost" style="font-size:11px;padding:6px 10px;">Confirm</button>
+                  <button type="button" class="btn btn-ghost" style="font-size:11px;padding:6px 10px;color:var(--hint);" onclick="this.parentElement.style.display='none';document.getElementById('reset-btn-{{ t.id }}').style.display='';">Cancel</button>
+                </form>
+              </div>
+              <form method="POST" action="/disconnect" onsubmit="return confirm('Disconnect this bank account? Syncing will stop for this account until you reconnect.');">
+                <input type="hidden" name="token_id" value="{{ t.id }}">
+                <button type="submit" class="btn btn-danger-ghost">Disconnect</button>
+              </form>
+            </div>
           </div>
           {% if t.expires_at %}
           <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--hint);">
@@ -103,7 +115,10 @@
           <input type="hidden" name="action" value="start">
           <input type="hidden" id="inp-bank-name" name="bank_name">
           <input type="hidden" id="inp-bank-country" name="bank_country">
-          <label style="margin-top:0;">Search your bank</label>
+          <label style="margin-top:0;">Start syncing from</label>
+          <input type="date" name="start_sync_date" id="start-date-input" value="{{ today }}" required>
+          <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">Only transactions from this date forward will be imported for this bank.</div>
+          <label>Search your bank</label>
           <div style="position:relative;">
             <input type="text" id="bank-search" placeholder="Type to search 2,500+ European banks..." autocomplete="off" oninput="filterBanks(this.value)" onfocus="showDropdown()">
             <div id="bank-dropdown" style="display:none; position:absolute; top:100%; left:0; right:0; background:#fff; border:1px solid var(--border); border-top:none; border-radius:0 0 6px 6px; max-height:220px; overflow-y:auto; z-index:100; box-shadow:0 4px 12px rgba(0,0,0,0.08);"></div>

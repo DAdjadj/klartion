@@ -67,8 +67,9 @@ def __getattr__(name):
     }
     if name in ("LICENCE_KEY", "EB_APP_ID", "EB_PRIVATE_KEY_PATH",
                 "NOTION_API_KEY", "NOTION_DATABASE_ID", "SMTP_HOST",
-                "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD",
-                "NOTIFY_EMAIL", "SYNC_TIME", "SYNC_FREQUENCY", "KLARTION_URL"):
+                "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM",
+                "NOTIFY_EMAIL", "NOTIFY_ON",
+                "SYNC_TIME", "SYNC_FREQUENCY", "KLARTION_URL"):
         val = _get(name, defaults.get(name, ""))
         if name == "SMTP_PORT":
             return int(val or 587)

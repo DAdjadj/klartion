@@ -53,8 +53,11 @@ def run():
 
         # 4. Determine date range
         last_sync = db.get_last_sync()
+        start_sync_date = db.get_setting("start_sync_date") or db.get_setting("pending_start_sync_date")
         if last_sync:
             date_from = (datetime.fromisoformat(last_sync) - timedelta(days=2)).strftime("%Y-%m-%d")
+        elif start_sync_date:
+            date_from = start_sync_date
         else:
             date_from = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
         date_to = datetime.now(timezone.utc).strftime("%Y-%m-%d")

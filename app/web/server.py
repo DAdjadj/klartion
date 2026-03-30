@@ -117,29 +117,57 @@ def setup_notifications():
     if request.method == "POST":
         klartion_url = request.form.get("klartion_url", "").strip().rstrip("/")
         email        = request.form.get("notify_email", "").strip()
+        notify_on    = request.form.get("notify_on", "all").strip()
         smtp_user    = request.form.get("smtp_user", "").strip()
         smtp_pass    = request.form.get("smtp_password", "").strip()
+        smtp_from    = request.form.get("smtp_from", "").strip()
+        smtp_host    = request.form.get("smtp_host", "").strip()
         if not klartion_url or not email or not smtp_user or not smtp_pass:
             error = "All fields are required."
         else:
             _cfg().set("KLARTION_URL",   klartion_url)
             _cfg().set("NOTIFY_EMAIL",   email)
+            _cfg().set("NOTIFY_ON",      notify_on)
             _cfg().set("SMTP_USER",      smtp_user)
             _cfg().set("SMTP_PASSWORD",  smtp_pass)
+            _cfg().set("SMTP_FROM",      smtp_from)
+            _cfg().set("SMTP_HOST",      smtp_host)
             return redirect(url_for("setup_sync"))
     return render_template("setup_notifications.html",
         error=error,
         klartion_url=_cfg().KLARTION_URL,
         notify_email=_cfg().NOTIFY_EMAIL,
+        notify_on=_cfg().NOTIFY_ON or "all",
         smtp_user=_cfg().SMTP_USER,
         smtp_password=_cfg().SMTP_PASSWORD,
+        smtp_from=_cfg().SMTP_FROM,
+        smtp_host=_cfg().SMTP_HOST if _cfg().SMTP_HOST != "smtp.mail.me.com" else "",
     )
 
 @app.route("/email/test", methods=["POST"])
 def test_email():
     try:
+        data = request.get_json(silent=True) or {}
         from .. import email_notify
-        email_notify.send("Klartion: test email", "This is a test email from Klartion. If you're reading this, your email notifications are working correctly.")
+        # If form data provided, use it directly (allows testing before saving)
+        if data.get("smtp_user") and data.get("smtp_password") and data.get("notify_email"):
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = "Klartion: test email"
+            msg["From"]    = data.get("smtp_from") or data["smtp_user"]
+            msg["To"]      = data["notify_email"]
+            msg.attach(MIMEText("This is a test email from Klartion. If you're reading this, your email notifications are working correctly.", "plain"))
+            host = data.get("smtp_host") or email_notify._smtp_host_for(data["smtp_user"])
+            port = int(_cfg().SMTP_PORT or 587)
+            with smtplib.SMTP(host, port) as server:
+                server.ehlo()
+                server.starttls()
+                server.login(data["smtp_user"], data["smtp_password"])
+                server.sendmail(data.get("smtp_from") or data["smtp_user"], data["notify_email"], msg.as_string())
+        else:
+            email_notify.send("Klartion: test email", "This is a test email from Klartion. If you're reading this, your email notifications are working correctly.")
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -252,12 +280,20 @@ def connect():
                 _cfg().set("EB_APP_ID", app_id)
                 return redirect(url_for("connect"))
         elif action == "start":
-            bank_name    = request.form.get("bank_name", "").strip()
-            bank_country = request.form.get("bank_country", "").strip()
+            bank_name      = request.form.get("bank_name", "").strip()
+            bank_country   = request.form.get("bank_country", "").strip()
+            start_sync_date = request.form.get("start_sync_date", "").strip()
             if not bank_name or not bank_country:
                 error = "Please select a bank."
             else:
                 try:
+                    if start_sync_date:
+                        db.set_setting("pending_start_sync_date", start_sync_date)
+                    # Update KLARTION_URL from current request so the OAuth
+                    # callback redirects back through the same scheme (HTTPS via Caddy)
+                    scheme = request.headers.get("X-Forwarded-Proto", request.scheme)
+                    host   = request.headers.get("X-Forwarded-Host", request.host)
+                    _cfg().set("KLARTION_URL", f"{scheme}://{host}")
                     result   = enablebanking.start_auth(bank_name, bank_country)
                     auth_url = result["url"]
                     pending  = bank_name
@@ -288,6 +324,7 @@ def connect():
     except Exception:
         pass
 
+    from datetime import date
     return render_template("connect.html",
         error=error,
         success=success,
@@ -300,6 +337,7 @@ def connect():
         eb_app_id=_cfg().EB_APP_ID,
         bank_account_limit=bank_account_limit,
         bank_slot_url=f"https://buy.stripe.com/4gM9AMg348nt2Y7185cMM04?client_reference_id={_cfg().LICENCE_KEY}",
+        today=date.today().isoformat(),
     )
 
 @app.route("/connect/reauthorise", methods=["POST"])
@@ -456,6 +494,25 @@ def status():
     ]
     fun_message = random.choice(fun_messages)
 
+    # Review prompt logic
+    show_review_prompt = False
+    if not act_info.get("is_trial", False) and not db.get_setting("review_dismissed") and not db.get_setting("review_submitted"):
+        first_sync = db.get_setting("first_sync_date")
+        if not first_sync and syncs:
+            # Fall back to oldest sync log entry
+            conn = db.get_conn()
+            row = conn.execute("SELECT MIN(ran_at) FROM sync_log").fetchone()
+            conn.close()
+            first_sync = row[0] if row and row[0] else None
+        if first_sync:
+            try:
+                from datetime import datetime
+                first_dt = datetime.fromisoformat(first_sync.replace("Z", "+00:00") if "Z" in first_sync else first_sync)
+                if (datetime.now() - first_dt.replace(tzinfo=None)).days >= 7:
+                    show_review_prompt = True
+            except Exception:
+                pass
+
     return render_template("status.html",
         tokens=tokens,
         all_tokens=all_tokens,
@@ -479,6 +536,7 @@ def status():
         total_tx=total_tx,
         streak=streak,
         fun_message=fun_message,
+        show_review_prompt=show_review_prompt,
     )
 
 _sync_running = False
@@ -531,6 +589,87 @@ def disconnect():
     else:
         db.clear_tokens()
     return redirect(url_for("connect"))
+
+@app.route("/reset-sync", methods=["POST"])
+def reset_sync():
+    token_id   = request.form.get("token_id")
+    reset_date = request.form.get("reset_date", "").strip()
+    if token_id:
+        conn = db.get_conn()
+        # Clear all synced transactions so they re-import from the new date
+        conn.execute("DELETE FROM transactions")
+        conn.commit()
+        conn.close()
+        # Update the sync start date in settings
+        if reset_date:
+            db.set_setting("start_sync_date", reset_date)
+        logger.info("Reset sync state for token %s (start_date=%s)", token_id, reset_date)
+    return redirect(url_for("connect"))
+
+# ---------------------------------------------------------------------------
+# Review
+# ---------------------------------------------------------------------------
+
+@app.route("/review/dismiss", methods=["POST"])
+def review_dismiss():
+    db.set_setting("review_dismissed", "1")
+    return redirect(url_for("status"))
+
+@app.route("/review/submit", methods=["POST"])
+def review_submit():
+    import requests as _requests
+    rating      = request.form.get("rating", "").strip()
+    review_text = request.form.get("review", "").strip()
+    name        = request.form.get("name", "").strip()
+    key         = _cfg().LICENCE_KEY
+    if not rating or not review_text or not key:
+        return redirect(url_for("status"))
+    try:
+        resp = _requests.post("https://api.klartion.com/review", json={
+            "license_key": key,
+            "name": name or None,
+            "rating": int(rating),
+            "review": review_text,
+        }, timeout=10)
+        if resp.status_code in (200, 201):
+            db.set_setting("review_submitted", "1")
+        else:
+            logger.warning("Review submit failed: %s %s", resp.status_code, resp.text)
+            db.set_setting("review_submitted", "1")
+    except Exception as e:
+        logger.error("Review submit error: %s", e)
+        db.set_setting("review_submitted", "1")
+    return redirect(url_for("status"))
+
+# ---------------------------------------------------------------------------
+# Logs
+# ---------------------------------------------------------------------------
+
+def _sanitize_logs(text):
+    import re
+    text = re.sub(r'\b([A-Z]{2}\d{2})\w{4,}(\w{4})\b', r'\1****\2', text)
+    text = re.sub(r'\b(\w{2})\w*(@\w+\.\w+)', r'\1***\2', text)
+    text = re.sub(r"\[?\{'account_id':.*?\}\]?", '[account data redacted]', text)
+    return text
+
+@app.route("/api/logs")
+def api_logs():
+    import subprocess
+    lines = request.args.get("lines", "200")
+    try:
+        result = subprocess.run(
+            ["docker", "logs", "--tail", lines, CONTAINER_NAME],
+            capture_output=True, text=True, timeout=10
+        )
+        output = result.stdout + result.stderr
+        output = _sanitize_logs(output)
+        version = subprocess.run(
+            ["docker", "inspect", "--format", "{{.Image}}", CONTAINER_NAME],
+            capture_output=True, text=True, timeout=5
+        ).stdout.strip()[:19].replace("sha256:", "")
+        return jsonify({"logs": output, "version": version})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # ---------------------------------------------------------------------------
 # Update preference + self-update
