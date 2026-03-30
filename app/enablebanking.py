@@ -63,6 +63,7 @@ def get_banks() -> list:
 
 def start_auth(bank_name: str, bank_country: str) -> dict:
     valid_until = (datetime.now(timezone.utc) + timedelta(days=180)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    state_val   = str(uuid.uuid4())
     payload = {
         "access": {
             "valid_until": valid_until,
@@ -71,7 +72,7 @@ def start_auth(bank_name: str, bank_country: str) -> dict:
             "name": bank_name,
             "country": bank_country,
         },
-        "state": f"klartion-auth|{config.KLARTION_URL}",
+        "state": f"klartion-auth|{config.KLARTION_URL}|{state_val}",
         "redirect_url": "https://klartion.com/callback",
         "psu_type": "personal",
     }
@@ -102,7 +103,7 @@ def complete_auth(code: str, state: str) -> dict:
         raise ValueError("Missing code or state from redirect URL.")
 
     # Strip the embedded KLARTION_URL from state before sending to Enable Banking
-    clean_state = state.split("|")[0] if "|" in state else state
+    clean_state = state.split("|")[-1] if "|" in state else state
 
     resp = requests.post(
         f"{EB_BASE}/sessions",
