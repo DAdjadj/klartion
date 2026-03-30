@@ -1,10 +1,26 @@
 import smtplib
 import logging
+import requests
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from . import config
 
 logger = logging.getLogger(__name__)
+
+_unsubscribed_cache = {}
+
+def _is_unsubscribed(email: str) -> bool:
+    import time
+    now = time.time()
+    if email in _unsubscribed_cache and now - _unsubscribed_cache[email][1] < 3600:
+        return _unsubscribed_cache[email][0]
+    try:
+        resp = requests.post("https://api.klartion.com/is-unsubscribed", json={"email": email}, timeout=5)
+        result = resp.ok and resp.json().get("unsubscribed", False)
+    except Exception:
+        result = False
+    _unsubscribed_cache[email] = (result, now)
+    return result
 
 
 def _smtp_host_for(email: str) -> str:
@@ -26,6 +42,9 @@ def _smtp_host_for(email: str) -> str:
 def send(subject: str, body: str):
     if not config.SMTP_USER or not config.NOTIFY_EMAIL:
         logger.warning("Email not configured, skipping notification.")
+        return
+    if _is_unsubscribed(config.NOTIFY_EMAIL):
+        logger.info("Skipping email for unsubscribed %s: %s", config.NOTIFY_EMAIL, subject)
         return
 
     msg = MIMEMultipart("alternative")
