@@ -8,6 +8,8 @@ DB_PATH      = os.environ.get("DB_PATH", "/app/data/klartion.db")
 SECRET_KEY   = os.environ.get("SECRET_KEY", "dev-secret-key")
 REDIRECT_URI = "https://klartion.com/callback"
 
+_UNSET = object()
+
 def _db_get(key):
     try:
         conn = sqlite3.connect(DB_PATH)
@@ -16,12 +18,17 @@ def _db_get(key):
             "SELECT value FROM settings WHERE key = ?", (f"config:{key}",)
         ).fetchone()
         conn.close()
-        return row[0] if row and row[0] else None
+        if row is None:
+            return _UNSET
+        return row[0] or ""
     except Exception:
-        return None
+        return _UNSET
 
 def _get(key, default=""):
-    return _db_get(key) or os.environ.get(key, default)
+    db_val = _db_get(key)
+    if db_val is not _UNSET:
+        return db_val
+    return os.environ.get(key, default)
 
 def set(key, value):
     try:
