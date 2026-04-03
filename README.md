@@ -66,30 +66,26 @@ mkdir -p ~/klartion/data && cd ~/klartion
 curl -O https://raw.githubusercontent.com/DAdjadj/klartion/main/docker-compose.yml
 ```
 
-**On your local machine**, upload the private key to your server. The filename matches your Enable Banking Application ID:
-```bash
-scp ~/Downloads/your-app-id.pem user@your-server:~/klartion/data/your-app-id.pem
-```
-
+You do **not** need to clone the repository or create a `.env` file for the standard setup.
 
 **Back on your server**, start the container:
 ```bash
 docker compose up -d
 ```
 
-Open **http://your-server-address:3001** in your browser. The setup wizard will guide you through the rest.
+Open **http://your-server-address:3001** in your browser. The setup wizard will guide you through the rest, including uploading your Enable Banking `.pem` file directly in the browser.
 
 ---
 
 ## Setup wizard
 
-The browser-based wizard walks you through four steps:
+The browser-based wizard walks you through six steps:
 
 1. **Licence** — enter your key to activate Klartion on this machine
 2. **Notion** — duplicate the [ready-made template](https://hilarious-mirror-513.notion.site/4f95e8e7b23183c3be5381bef1d906b2), create a free integration, and paste your credentials
 3. **Notifications** — set your email and SMTP credentials
 4. **Sync** — choose your sync frequency (every 6, 12, or 24 hours)
-5. **Bank** — connect your bank via Enable Banking OAuth (one-time, browser-based). You can connect up to 2 bank accounts by default. Each bank's transactions are tagged with the bank name in a "Bank" column in Notion.
+5. **Bank** — upload your Enable Banking `.pem` file (App ID is filled automatically from the filename), then connect your bank via OAuth. You can connect up to 2 bank accounts by default. Each bank's transactions are tagged with the bank name in a "Bank" column in Notion.
 6. **Status** — view sync history, manage bank connections, check for updates
 
 Once complete, Klartion runs silently in the background. To add a second bank, go to the **Bank** tab and search for another bank. Need more than 2? You can purchase additional bank account slots from the status page.
