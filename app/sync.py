@@ -35,6 +35,18 @@ def run():
         email_notify.send_failure(msg)
         return False, 0, msg
 
+    # 2b. Ensure Balance property exists on Notion database
+    notion.ensure_balance_property()
+
+    # 2c. Learn category rules from Notion (user's manual edits)
+    try:
+        learned_rules = notion.fetch_category_rules()
+        if learned_rules:
+            db.save_category_rules(learned_rules)
+    except Exception as e:
+        logger.warning("Could not refresh category rules: %s", e)
+    category_rules = db.get_category_rules()
+
     total_written = 0
     errors = []
     balance_lines = []
@@ -94,12 +106,27 @@ def run():
         # 7. Reconcile pending
         _reconcile_pending(account_uid, all_transactions)
 
-        # 8. Write to Notion
+        # 8. Fetch account balance (before writing so we can attach to transactions)
+        current_balance = None
+        current_balance_currency = None
+        try:
+            balances = enablebanking.get_balances(session_id, account_uid)
+            current_balance, current_balance_currency = _extract_balance(balances)
+            if current_balance is not None:
+                db.update_token_fields(token_id, last_balance=str(current_balance), last_balance_currency=current_balance_currency)
+                balance_lines.append(f"{tokens.get('bank_name', 'Unknown')}: {current_balance:,.2f} {current_balance_currency}")
+                logger.info("Balance for %s: %s %s", bank_label, current_balance, current_balance_currency)
+        except Exception as e:
+            logger.warning("Could not fetch balance for %s: %s", bank_label, e)
+
+        # 9. Write to Notion
         written = 0
         for tx in new_transactions:
             try:
-                normalised = _normalise(tx)
+                normalised = _normalise(tx, category_rules=category_rules)
                 normalised["bank_name"] = tokens.get("bank_name", "")
+                if current_balance is not None:
+                    normalised["balance"] = current_balance
                 notion_page_id = notion.write_transaction(normalised)
                 db.upsert_transaction(
                     tx_id=_scoped_tx_id(account_uid, tx),
@@ -110,22 +137,11 @@ def run():
             except Exception as e:
                 logger.error("Failed to write transaction %s: %s", _get_tx_id(tx), e)
 
-        # 9. Fetch account balance
-        try:
-            balances = enablebanking.get_balances(session_id, account_uid)
-            balance_amount, balance_currency = _extract_balance(balances)
-            if balance_amount is not None:
-                db.update_token_fields(token_id, last_balance=str(balance_amount), last_balance_currency=balance_currency)
-                balance_lines.append(f"{tokens.get('bank_name', 'Unknown')}: {balance_amount:,.2f} {balance_currency}")
-                logger.info("Balance for %s: %s %s", bank_label, balance_amount, balance_currency)
-        except Exception as e:
-            logger.warning("Could not fetch balance for %s: %s", bank_label, e)
-
         db.update_token_fields(token_id, last_sync_at=datetime.now(timezone.utc).isoformat())
         total_written += written
         logger.info("Synced %d transactions from %s", written, bank_label)
 
-    # 10. Log and notify
+    # 11. Log and notify
     if errors:
         msg = f"{total_written} transactions written. Errors: {'; '.join(errors)}"
         db.log_sync("partial" if total_written > 0 else "failure", tx_count=total_written, message=msg)
@@ -136,7 +152,7 @@ def run():
 
     logger.info("Sync complete. %d transactions written.", total_written)
 
-    # 10. Check for updates silently
+    # 12. Check for updates silently
     try:
         _check_for_update()
     except Exception:
@@ -182,7 +198,7 @@ def _get_tx_id(tx: dict) -> str:
     )
 
 
-def _normalise(tx: dict) -> dict:
+def _normalise(tx: dict, category_rules: dict = None) -> dict:
     """
     Normalise an Enable Banking transaction into Klartion's internal format.
     """
@@ -213,7 +229,15 @@ def _normalise(tx: dict) -> dict:
         )
 
     reference = tx.get("remittance_information_unstructured") or tx.get("end_to_end_id") or ""
-    category  = (tx.get("bank_transaction_code") or {}).get("code") or tx.get("proprietary_bank_transaction_code") or "Uncategorised"
+    bank_category = (tx.get("bank_transaction_code") or {}).get("code") or tx.get("proprietary_bank_transaction_code") or ""
+
+    # Smart categorisation: use learned rules from user's Notion edits,
+    # fall back to bank code, then "Uncategorised"
+    if category_rules and merchant in category_rules:
+        category = category_rules[merchant]
+    else:
+        category = bank_category or "Uncategorised"
+
     date      = tx.get("booking_date") or tx.get("value_date") or ""
     status    = "Cleared" if _is_booked_status(tx.get("status")) else "Pending"
 
