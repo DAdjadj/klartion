@@ -588,9 +588,23 @@ def status():
             except Exception:
                 pass
 
+    # Build balance info from tokens
+    balances = []
+    for t in all_tokens:
+        if t.get("last_balance"):
+            try:
+                balances.append({
+                    "bank": t.get("bank_name", "Unknown"),
+                    "amount": float(t["last_balance"]),
+                    "currency": t.get("last_balance_currency", "EUR"),
+                })
+            except (ValueError, TypeError):
+                pass
+
     return render_template("status.html",
         tokens=tokens,
         all_tokens=all_tokens,
+        balances=balances,
         syncs=syncs,
         days_left=days_left,
         last_sync=last_sync,

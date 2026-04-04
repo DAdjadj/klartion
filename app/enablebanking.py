@@ -159,6 +159,20 @@ def get_transactions(session_id: str, account_uid: str, date_from: str, date_to:
             url = None
     return [t for t in all_txns if t.get("status") in ("BOOK", "booked", "PDNG", "pending")]
 
+def get_balances(session_id: str, account_uid: str) -> list:
+    """
+    Fetch balances for an account by UID.
+    Returns a list of balance objects from Enable Banking.
+    """
+    resp = requests.get(
+        f"{EB_BASE}/accounts/{account_uid}/balances",
+        headers=_headers(),
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return resp.json().get("balances", [])
+
+
 def check_token_expiry():
     """Returns days until the soonest-expiring token, or None."""
     all_tokens = db.get_all_tokens()

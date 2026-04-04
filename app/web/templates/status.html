@@ -119,6 +119,11 @@
       {% if streak > 0 %}
       <div class="stat-row"><span class="stat-label">Sync streak</span><span class="stat-value">{{ streak }} in a row</span></div>
       {% endif %}
+      {% if balances %}
+      {% for b in balances %}
+      <div class="stat-row"><span class="stat-label">{{ b.bank }} balance</span><span class="stat-value">{{ "{:,.2f}".format(b.amount) }} {{ b.currency }}</span></div>
+      {% endfor %}
+      {% endif %}
     </div>
 
     <div class="card">
