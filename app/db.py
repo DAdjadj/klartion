@@ -46,6 +46,12 @@ def init():
             key   TEXT PRIMARY KEY,
             value TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS category_rules (
+            merchant    TEXT PRIMARY KEY,
+            category    TEXT NOT NULL,
+            user_id     TEXT NOT NULL DEFAULT 'default'
+        );
     """)
     try:
         conn.execute("ALTER TABLE tokens ADD COLUMN start_sync_date TEXT")
@@ -231,3 +237,28 @@ def clear_sync_log(user_id="default"):
     conn.execute("DELETE FROM sync_log WHERE user_id = ?", (user_id,))
     conn.commit()
     conn.close()
+
+
+def save_category_rules(rules: dict, user_id="default"):
+    """Save merchant -> category mappings. rules is {merchant: category}."""
+    if not rules:
+        return
+    conn = get_conn()
+    for merchant, category in rules.items():
+        conn.execute("""
+            INSERT INTO category_rules (merchant, category, user_id)
+            VALUES (?, ?, ?)
+            ON CONFLICT(merchant) DO UPDATE SET category = excluded.category
+        """, (merchant, category, user_id))
+    conn.commit()
+    conn.close()
+
+
+def get_category_rules(user_id="default") -> dict:
+    """Return {merchant: category} mapping."""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT merchant, category FROM category_rules WHERE user_id = ?", (user_id,)
+    ).fetchall()
+    conn.close()
+    return {r["merchant"]: r["category"] for r in rows}
