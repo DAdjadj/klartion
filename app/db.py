@@ -55,6 +55,14 @@ def init():
         conn.execute("ALTER TABLE tokens ADD COLUMN last_sync_at TEXT")
     except sqlite3.OperationalError:
         pass
+    try:
+        conn.execute("ALTER TABLE tokens ADD COLUMN last_balance TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE tokens ADD COLUMN last_balance_currency TEXT")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
 
@@ -146,7 +154,7 @@ def get_pending_transactions(user_id="default", tx_id_prefix=None):
     return [dict(r) for r in rows]
 
 def update_token_fields(token_id, **fields):
-    allowed = {"access_token", "session_id", "bank_name", "bank_country", "expires_at", "start_sync_date", "last_sync_at"}
+    allowed = {"access_token", "session_id", "bank_name", "bank_country", "expires_at", "start_sync_date", "last_sync_at", "last_balance", "last_balance_currency"}
     updates = {key: value for key, value in fields.items() if key in allowed}
     if not updates:
         return

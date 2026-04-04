@@ -67,12 +67,15 @@ def send(subject: str, body: str):
         logger.error("Failed to send email: %s", e)
 
 
-def send_success(tx_count: int):
+def send_success(tx_count: int, balance_lines: list = None):
     if config.NOTIFY_ON == "errors":
         return
+    body = f"Sync completed successfully. {tx_count} transaction(s) written to Notion."
+    if balance_lines:
+        body += "\n\nAccount balances:\n" + "\n".join(f"  {line}" for line in balance_lines)
     send(
         subject=f"Klartion: sync complete",
-        body=f"Sync completed successfully. {tx_count} transaction(s) written to Notion."
+        body=body,
     )
 
 

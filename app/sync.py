@@ -37,6 +37,7 @@ def run():
 
     total_written = 0
     errors = []
+    balance_lines = []
 
     for tokens in all_tokens:
         bank_label = f"{tokens.get('bank_name', 'Unknown')} ({tokens.get('bank_country', '')})"
@@ -109,18 +110,29 @@ def run():
             except Exception as e:
                 logger.error("Failed to write transaction %s: %s", _get_tx_id(tx), e)
 
+        # 9. Fetch account balance
+        try:
+            balances = enablebanking.get_balances(session_id, account_uid)
+            balance_amount, balance_currency = _extract_balance(balances)
+            if balance_amount is not None:
+                db.update_token_fields(token_id, last_balance=str(balance_amount), last_balance_currency=balance_currency)
+                balance_lines.append(f"{tokens.get('bank_name', 'Unknown')}: {balance_amount:,.2f} {balance_currency}")
+                logger.info("Balance for %s: %s %s", bank_label, balance_amount, balance_currency)
+        except Exception as e:
+            logger.warning("Could not fetch balance for %s: %s", bank_label, e)
+
         db.update_token_fields(token_id, last_sync_at=datetime.now(timezone.utc).isoformat())
         total_written += written
         logger.info("Synced %d transactions from %s", written, bank_label)
 
-    # 9. Log and notify
+    # 10. Log and notify
     if errors:
         msg = f"{total_written} transactions written. Errors: {'; '.join(errors)}"
         db.log_sync("partial" if total_written > 0 else "failure", tx_count=total_written, message=msg)
         email_notify.send_failure(msg)
     else:
         db.log_sync("success", tx_count=total_written)
-        email_notify.send_success(total_written)
+        email_notify.send_success(total_written, balance_lines=balance_lines)
 
     logger.info("Sync complete. %d transactions written.", total_written)
 
@@ -216,6 +228,25 @@ def _normalise(tx: dict) -> dict:
         "direction": direction,
         "status":    status,
     }
+
+
+def _extract_balance(balances: list) -> tuple:
+    """
+    Pick the most useful balance from the list returned by Enable Banking.
+    Prefers closing booked (CLBD), then expected (XPCD), then any available.
+    Returns (amount, currency) or (None, None).
+    """
+    if not balances:
+        return None, None
+    preferred_types = ["CLBD", "closingBooked", "XPCD", "expected", "ITAV", "interimAvailable"]
+    for btype in preferred_types:
+        for b in balances:
+            if b.get("balance_type") == btype:
+                amt = b.get("balance_amount", {})
+                return float(amt.get("amount", 0)), amt.get("currency", "EUR")
+    # Fallback: first balance
+    amt = balances[0].get("balance_amount", {})
+    return float(amt.get("amount", 0)), amt.get("currency", "EUR")
 
 
 def _check_for_update():
