@@ -363,6 +363,47 @@ def connect():
                 except Exception as e:
                     logger.error("Failed to start auth: %s", e)
                     error = f"Could not start bank connection: {e}"
+        elif action == "connect_provider":
+            provider_name = request.form.get("provider_name", "").strip()
+            if not provider_name:
+                error = "Please select a provider."
+            elif db.get_token_count() >= _get_bank_account_limit():
+                error = "Bank account limit reached. Disconnect an account or add another slot before connecting a new one."
+            else:
+                from ..providers import get_provider, PROVIDERS
+                if provider_name not in PROVIDERS:
+                    error = f"Unknown provider: {provider_name}"
+                else:
+                    provider = get_provider(provider_name)
+                    credentials = {}
+                    for field in provider.credential_fields:
+                        val = request.form.get(f"cred_{field['key']}", "").strip()
+                        if not val:
+                            error = f"{field['label']} is required."
+                            break
+                        credentials[field["key"]] = val
+
+                if not error:
+                    try:
+                        valid = provider.validate_credentials(credentials)
+                        if not valid:
+                            error = f"Could not connect to {provider.display_name}. Please check your credentials."
+                    except Exception as e:
+                        error = f"Could not validate {provider.display_name} credentials: {e}"
+
+                if not error:
+                    from .. import crypto
+                    encrypted = crypto.encrypt_credentials(credentials)
+                    db.save_provider_token(
+                        bank_name=provider.display_name,
+                        provider=provider_name,
+                        provider_credentials=encrypted,
+                    )
+                    _start_scheduler_if_ready()
+                    import threading
+                    threading.Thread(target=sync.run, daemon=True).start()
+                    return redirect(url_for("connect", success=1))
+
         elif action == "cancel":
             db.set_setting("pending_session_id", "")
             db.set_setting("pending_bank_name", "")
@@ -380,6 +421,12 @@ def connect():
     # Fetch bank account limit from licence API
     bank_account_limit = _get_bank_account_limit()
 
+    # Balance providers only shown when feature flag is enabled
+    balance_providers = []
+    if db.get_setting("enable_balance_providers") == "1":
+        from ..providers import get_all_providers
+        balance_providers = get_all_providers()
+
     from datetime import date
     return render_template("connect.html",
         error=error,
@@ -394,6 +441,7 @@ def connect():
         bank_account_limit=bank_account_limit,
         bank_slot_url=f"https://buy.stripe.com/4gM9AMg348nt2Y7185cMM04?client_reference_id={_cfg().LICENCE_KEY}",
         today=date.today().isoformat(),
+        balance_providers=balance_providers,
         active="bank",
     )
 
