@@ -60,10 +60,15 @@
         <div>
           <div class="connected-pill">Connected</div>
           <div style="margin-top:8px; font-family:var(--mono); font-size:12px; color:var(--muted);">
+            {% if t.sync_mode == 'balance' %}
+            {{ loop.index }}. {{ t.bank_name }} <span style="font-size:10px;color:var(--hint);margin-left:4px;">balance only</span>
+            {% else %}
             {{ loop.index }}. {{ t.bank_name }} ({{ t.bank_country }})
+            {% endif %}
           </div>
         </div>
         <div style="display:flex;gap:6px;">
+          {% if t.sync_mode != 'balance' %}
           <div>
             <button type="button" class="btn btn-ghost" style="font-size:11px;padding:6px 10px;" onclick="this.style.display='none';this.nextElementSibling.style.display='flex';" id="reset-btn-{{ t.id }}">Reset sync</button>
             <form method="POST" action="/reset-sync" style="display:none;gap:4px;align-items:center;" id="reset-form-{{ t.id }}" onsubmit="return confirm('Reset sync for this account? Transactions from the selected date will be re-imported on the next sync.');">
@@ -73,13 +78,14 @@
               <button type="button" class="btn btn-ghost" style="font-size:11px;padding:6px 10px;color:var(--hint);" onclick="this.parentElement.style.display='none';document.getElementById('reset-btn-{{ t.id }}').style.display='';">Cancel</button>
             </form>
           </div>
-          <form method="POST" action="/disconnect" onsubmit="return confirm('Disconnect this bank account? Syncing will stop for this account until you reconnect.');">
+          {% endif %}
+          <form method="POST" action="/disconnect" onsubmit="return confirm('Disconnect this account? Syncing will stop until you reconnect.');">
             <input type="hidden" name="token_id" value="{{ t.id }}">
             <button type="submit" class="btn btn-danger">Disconnect</button>
           </form>
         </div>
       </div>
-      {% if t.expires_at %}
+      {% if t.sync_mode != 'balance' and t.expires_at %}
       <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--hint);">
         <span>Expires {{ t.expires_at[:10] }}</span>
         <form method="POST" action="/connect/reauthorise" style="display:inline;">
@@ -100,6 +106,17 @@
       Bank account limit reached. <a href="{{ bank_slot_url }}" target="_blank" style="color:var(--text); font-weight:600;">Add 1 more →</a>
     </div>
     {% else %}
+
+    {% if balance_providers %}
+    <!-- Mode toggle: Bank vs Investment provider -->
+    <div style="display:flex;gap:4px;margin-bottom:1rem;background:var(--surface);border-radius:8px;padding:3px;border:1px solid var(--border);">
+      <button type="button" id="mode-bank-btn" onclick="setMode('bank')" style="flex:1;padding:8px;font-size:12px;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:#37996b;color:#fff;">Bank</button>
+      <button type="button" id="mode-provider-btn" onclick="setMode('provider')" style="flex:1;padding:8px;font-size:12px;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:transparent;color:var(--muted);">Investment / Balance</button>
+    </div>
+    {% endif %}
+
+    <!-- Bank mode (existing flow) -->
+    <div id="mode-bank">
     <form method="POST" id="connect-form">
       <input type="hidden" name="action" value="start">
       <input type="hidden" id="inp-bank-name" name="bank_name">
@@ -119,6 +136,30 @@
       <div style="font-size:11px; color:var(--hint); margin-top:0.5rem;">Personal accounts only. 2,500+ banks across 29 European countries.</div>
       <button class="btn btn-primary" type="submit" id="connect-btn" disabled style="background:var(--border); opacity:0.5;">Authorise bank →</button>
     </form>
+    </div>
+
+    {% if balance_providers %}
+    <!-- Balance provider mode -->
+    <div id="mode-provider" style="display:none;">
+    <form method="POST" id="provider-form">
+      <input type="hidden" name="action" value="connect_provider">
+      <label style="margin-top:0;">Provider</label>
+      <select name="provider_name" id="provider-select" onchange="onProviderChange()" style="width:100%;">
+        <option value="">Select a provider...</option>
+        {% for p in balance_providers %}
+        <option value="{{ p.key }}">{{ p.display_name }}</option>
+        {% endfor %}
+      </select>
+      <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">Select your investment platform. Only current balance is synced — no individual transactions.</div>
+
+      <div id="provider-cred-fields"></div>
+
+      <div class="alert alert-info" style="margin-top:1rem;">Balance is synced in your account currency. For providers that report in USD, the amount is converted to EUR using the ECB exchange rate. The displayed value may differ slightly (~1-2%) from your provider's total due to exchange rate spreads.</div>
+
+      <button class="btn btn-primary" type="submit" id="provider-connect-btn" disabled style="background:var(--border); opacity:0.5;">Connect provider →</button>
+    </form>
+    </div>
+    {% endif %}
     {% endif %}
 
   {% elif auth_url %}
@@ -191,5 +232,81 @@
     if (dd && !dd.contains(e.target) && e.target.id !== 'bank-search') dd.style.display = 'none';
   });
   loadBanks();
+
+  // --- Mode toggle ---
+  function setMode(mode) {
+    var bankDiv = document.getElementById('mode-bank');
+    var provDiv = document.getElementById('mode-provider');
+    var bankBtn = document.getElementById('mode-bank-btn');
+    var provBtn = document.getElementById('mode-provider-btn');
+    if (!bankDiv || !provDiv) return;
+    if (mode === 'provider') {
+      bankDiv.style.display = 'none';
+      provDiv.style.display = 'block';
+      bankBtn.style.background = 'transparent';
+      bankBtn.style.color = 'var(--muted)';
+      provBtn.style.background = '#37996b';
+      provBtn.style.color = '#fff';
+    } else {
+      bankDiv.style.display = 'block';
+      provDiv.style.display = 'none';
+      bankBtn.style.background = '#37996b';
+      bankBtn.style.color = '#fff';
+      provBtn.style.background = 'transparent';
+      provBtn.style.color = 'var(--muted)';
+    }
+  }
+
+  // --- Provider credential fields ---
+  var providerMeta = {{ balance_providers | tojson }};
+
+  function onProviderChange() {
+    var sel = document.getElementById('provider-select');
+    var container = document.getElementById('provider-cred-fields');
+    container.innerHTML = '';
+    var key = sel.value;
+    if (!key) { checkProviderReady(); return; }
+    var provider = providerMeta.find(function(p) { return p.key === key; });
+    if (!provider) { checkProviderReady(); return; }
+    provider.credential_fields.forEach(function(field) {
+      var label = document.createElement('label');
+      label.textContent = field.label;
+      var input = document.createElement('input');
+      input.type = field.type === 'password' ? 'password' : 'text';
+      input.name = 'cred_' + field.key;
+      input.placeholder = field.label;
+      input.required = true;
+      input.style.width = '100%';
+      input.style.boxSizing = 'border-box';
+      input.addEventListener('input', checkProviderReady);
+      container.appendChild(label);
+      container.appendChild(input);
+      if (field.help) {
+        var hint = document.createElement('div');
+        hint.style.cssText = 'font-size:11px; color:var(--hint); margin-top:0.4rem; margin-bottom:0.5rem;';
+        var text = field.help;
+        if (field.help_url) {
+          text += ' <a href="' + field.help_url + '" target="_blank" style="color:var(--muted);">Get your key →</a>';
+        }
+        hint.innerHTML = text;
+        container.appendChild(hint);
+      }
+    });
+    checkProviderReady();
+  }
+
+  function checkProviderReady() {
+    var sel = document.getElementById('provider-select');
+    var btn = document.getElementById('provider-connect-btn');
+    if (!sel || !btn) return;
+    var ready = sel.value.length > 0;
+    if (ready) {
+      var inputs = document.querySelectorAll('#provider-cred-fields input[required]');
+      inputs.forEach(function(inp) { if (!inp.value.trim()) ready = false; });
+    }
+    btn.disabled = !ready;
+    btn.style.background = ready ? '#37996b' : 'var(--border)';
+    btn.style.opacity = ready ? '1' : '0.5';
+  }
 </script>
 {% endblock %}

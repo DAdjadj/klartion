@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, timedelta, timezone
-from . import config, db, enablebanking, notion, email_notify, licence
+from . import config, db, enablebanking, notion, email_notify, licence, crypto
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +52,16 @@ def run():
     balance_lines = []
 
     for tokens in all_tokens:
+        # Handle balance-only providers separately
+        if tokens.get("sync_mode") == "balance":
+            success, count, label = _sync_balance_token(tokens)
+            if success:
+                total_written += count
+                balance_lines.append(label)
+            else:
+                errors.append(label)
+            continue
+
         bank_label = f"{tokens.get('bank_name', 'Unknown')} ({tokens.get('bank_country', '')})"
         token_id = tokens["id"]
         session_id = tokens["session_id"]
@@ -159,6 +169,98 @@ def run():
         pass
 
     return len(errors) == 0, total_written, "OK"
+
+
+def _sync_balance_token(tokens: dict):
+    """
+    Sync a balance-only provider token. Fetches the portfolio value,
+    archives the previous Notion row for this provider, and creates a
+    new row with today's balance. This keeps one row per provider in the
+    Notion database representing the current portfolio value.
+    Returns (success: bool, tx_count: int, label: str).
+    """
+    from .providers import get_provider, PROVIDERS
+    provider_name = tokens.get("provider", "")
+    bank_label = tokens.get("bank_name", provider_name)
+    token_id = tokens["id"]
+
+    if provider_name not in PROVIDERS:
+        return False, 0, f"{bank_label}: Unknown provider '{provider_name}'"
+
+    try:
+        provider = get_provider(provider_name)
+    except Exception as e:
+        return False, 0, f"{bank_label}: {e}"
+
+    try:
+        credentials = crypto.decrypt_credentials(tokens.get("provider_credentials", ""))
+    except Exception as e:
+        logger.error("Failed to decrypt credentials for %s: %s", bank_label, e)
+        return False, 0, f"{bank_label}: Could not decrypt credentials"
+
+    try:
+        balance = provider.get_balance(credentials)
+        currency = provider.get_currency(credentials)
+    except Exception as e:
+        logger.error("Failed to fetch balance from %s: %s", bank_label, e)
+        return False, 0, f"{bank_label}: {e}"
+
+    balance_float = float(balance)
+    logger.info("%s balance: %s %s", bank_label, balance_float, currency)
+
+    # Archive the previous balance row in Notion for this provider
+    tx_id_prefix = f"provider:{provider_name}:"
+    known = db.get_known_tx_ids(tx_id_prefix=tx_id_prefix)
+    for old_tx_id in known:
+        conn = db.get_conn()
+        row = conn.execute(
+            "SELECT notion_page_id FROM transactions WHERE tx_id = ?", (old_tx_id,)
+        ).fetchone()
+        conn.close()
+        if row and row["notion_page_id"]:
+            try:
+                from notion_client import Client
+                client = Client(auth=config.NOTION_API_KEY)
+                client.pages.update(page_id=row["notion_page_id"], archived=True)
+            except Exception as e:
+                logger.warning("Could not archive old balance page %s: %s", row["notion_page_id"], e)
+        conn = db.get_conn()
+        conn.execute("DELETE FROM transactions WHERE tx_id = ?", (old_tx_id,))
+        conn.commit()
+        conn.close()
+
+    # Write a single row to Notion with the current portfolio value
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    tx_id = f"provider:{provider_name}:{today}"
+    tx_count = 0
+    if balance_float != 0:
+        tx = {
+            "tx_id": tx_id,
+            "date": today,
+            "amount": balance_float,
+            "currency": currency,
+            "merchant": provider.display_name,
+            "category": "Investment",
+            "reference": f"{provider.display_name} portfolio value",
+            "direction": "in",
+            "status": "Cleared",
+            "bank_name": provider.display_name,
+            "balance": balance_float,
+        }
+        try:
+            notion_page_id = notion.write_transaction(tx)
+            db.upsert_transaction(tx_id=tx_id, notion_page_id=notion_page_id, status="cleared")
+            tx_count = 1
+        except Exception as e:
+            logger.error("Failed to write balance to Notion for %s: %s", bank_label, e)
+            return False, 0, f"{bank_label}: Failed to write to Notion: {e}"
+
+    db.update_token_fields(token_id, last_balance=str(balance_float), last_balance_currency=currency)
+    db.update_token_fields(token_id, last_sync_at=datetime.now(timezone.utc).isoformat())
+
+    label = f"{bank_label}: {balance_float:,.2f} {currency}"
+    logger.info("Synced %s", label)
+    return True, tx_count, label
 
 
 def _reconcile_pending(account_uid: str, all_transactions: list):

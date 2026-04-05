@@ -69,6 +69,18 @@ def init():
         conn.execute("ALTER TABLE tokens ADD COLUMN last_balance_currency TEXT")
     except sqlite3.OperationalError:
         pass
+    try:
+        conn.execute("ALTER TABLE tokens ADD COLUMN provider TEXT NOT NULL DEFAULT 'enablebanking'")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE tokens ADD COLUMN provider_credentials TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE tokens ADD COLUMN sync_mode TEXT NOT NULL DEFAULT 'transactions'")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
 
@@ -159,8 +171,26 @@ def get_pending_transactions(user_id="default", tx_id_prefix=None):
     conn.close()
     return [dict(r) for r in rows]
 
+def save_provider_token(bank_name, provider, provider_credentials, user_id="default"):
+    """Save a balance provider token (no session/access_token needed)."""
+    conn = get_conn()
+    conn.execute("""
+        INSERT INTO tokens (user_id, bank_name, bank_country, provider, provider_credentials, sync_mode)
+        VALUES (?, ?, '', ?, ?, 'balance')
+    """, (user_id, bank_name, provider, provider_credentials))
+    conn.commit()
+    conn.close()
+
+
+def get_token_count(user_id="default"):
+    conn = get_conn()
+    count = conn.execute("SELECT COUNT(*) FROM tokens WHERE user_id = ?", (user_id,)).fetchone()[0]
+    conn.close()
+    return count
+
+
 def update_token_fields(token_id, **fields):
-    allowed = {"access_token", "session_id", "bank_name", "bank_country", "expires_at", "start_sync_date", "last_sync_at", "last_balance", "last_balance_currency"}
+    allowed = {"access_token", "session_id", "bank_name", "bank_country", "expires_at", "start_sync_date", "last_sync_at", "last_balance", "last_balance_currency", "provider_credentials"}
     updates = {key: value for key, value in fields.items() if key in allowed}
     if not updates:
         return
