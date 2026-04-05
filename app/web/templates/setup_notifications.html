@@ -41,18 +41,20 @@
         }
         </script>
         <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">The address you use to open Klartion in your browser. Used to redirect you back after connecting your bank.</div>
-        <label for="notify_email">Send notifications to</label>
-        <input type="email" id="notify_email" name="notify_email" value="{{ notify_email }}" placeholder="you@example.com" required>
         <label for="notify_on">When to notify</label>
-        <select id="notify_on" name="notify_on">
+        <select id="notify_on" name="notify_on" onchange="toggleEmailFields()">
           <option value="all" {% if notify_on == "all" %}selected{% endif %}>All syncs</option>
           <option value="errors" {% if notify_on == "errors" %}selected{% endif %}>Errors only</option>
+          <option value="never" {% if notify_on == "never" %}selected{% endif %}>Never</option>
         </select>
+        <div id="email-fields" {% if notify_on == "never" %}hidden{% endif %}>
+        <label for="notify_email">Send notifications to</label>
+        <input type="email" id="notify_email" name="notify_email" value="{{ notify_email }}" placeholder="you@example.com" {% if notify_on != "never" %}required{% endif %}>
         <label for="smtp_user">Email address to send from</label>
-        <input type="text" id="smtp_user" name="smtp_user" value="{{ smtp_user }}" placeholder="you@icloud.com" autocomplete="off" required>
+        <input type="text" id="smtp_user" name="smtp_user" value="{{ smtp_user }}" placeholder="you@icloud.com" autocomplete="off" {% if notify_on != "never" %}required{% endif %}>
         <label for="smtp_password">App-specific password</label>
         <div style="position:relative;">
-          <input type="password" id="smtp_password" name="smtp_password" value="{{ smtp_password }}" placeholder="App-specific password" autocomplete="off" required style="padding-right:2.5rem;">
+          <input type="password" id="smtp_password" name="smtp_password" value="{{ smtp_password }}" placeholder="App-specific password" autocomplete="off" {% if notify_on != "never" %}required{% endif %} style="padding-right:2.5rem;">
           <button type="button" onclick="togglePassword()" style="position:absolute; right:0.75rem; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; color:var(--muted); font-size:12px;" id="eye-btn">Show</button>
         </div>
         <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">For iCloud: use an app-specific password from <a href="https://appleid.apple.com" target="_blank" style="color:var(--muted);">appleid.apple.com</a>. For Gmail: use an app password from your Google account security settings.</div>
@@ -69,10 +71,11 @@
         </div>
         <button type="button" class="btn btn-ghost" id="test-email-btn" onclick="sendTestEmail()" style="font-size:12px;margin-top:0.5rem;">Send test email</button>
         <div id="test-email-msg" style="font-size:12px;margin-top:6px;min-height:18px;"></div>
+        </div>
         <button class="btn btn-primary" type="submit">Continue</button>
       </form>
     </div>
-    <div class="card" style="margin-top:1rem;" id="unsub-card">
+    <div class="card" style="margin-top:1rem;" id="unsub-card" {% if notify_on == "never" %}hidden{% endif %}>
       <div class="card-title" style="font-size:14px;">Email preferences</div>
       <p style="font-size:12px;color:var(--hint);margin:0.25rem 0 0.5rem;">This controls all emails from Klartion — sync notifications, trial reminders, and product updates.</p>
       <p id="unsub-status" style="font-size:13px;color:var(--muted);margin:0.5rem 0;"></p>
@@ -80,6 +83,14 @@
       <div id="unsub-msg" style="font-size:12px;margin-top:6px;min-height:18px;"></div>
     </div>
     <script>
+    function toggleEmailFields() {
+      var isNever = document.getElementById('notify_on').value === 'never';
+      document.getElementById('email-fields').hidden = isNever;
+      document.getElementById('unsub-card').hidden = isNever;
+      ['notify_email', 'smtp_user', 'smtp_password'].forEach(function(id) {
+        document.getElementById(id).required = !isNever;
+      });
+    }
     function togglePassword() {
       const f = document.getElementById('smtp_password');
       const b = document.getElementById('eye-btn');
