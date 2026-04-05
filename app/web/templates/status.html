@@ -139,7 +139,7 @@
               <td class="utc-time">{{ s.ran_at }}</td>
               <td><span class="badge {% if s.status == 'success' %}badge-success{% else %}badge-fail{% endif %}">{{ s.status }}</span></td>
               <td>{{ s.tx_count }}</td>
-              <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ s.message }}">{{ s.message or '—' }}</td>
+              <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;" onclick="this.style.whiteSpace=this.style.whiteSpace==='normal'?'nowrap':'normal'">{{ s.message or '—' }}</td>
             </tr>
             {% endfor %}
           </tbody>

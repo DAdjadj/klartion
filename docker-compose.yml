@@ -11,7 +11,7 @@ services:
       - .:/compose:ro
 
   watchtower:
-    image: containrrr/watchtower
+    image: nickfedor/watchtower
     container_name: klartion-watchtower
     restart: unless-stopped
     volumes:
