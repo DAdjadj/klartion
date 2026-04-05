@@ -9,73 +9,59 @@
 </head>
 <body class="has-shell page-{{ active or 'app' }}">
   <main class="shell-frame">
-    <header class="chrome-bar">
-      <div class="traffic-lights" aria-hidden="true">
-        <span class="red"></span>
-        <span class="yellow"></span>
-        <span class="green"></span>
-      </div>
-      <div class="address-bar">
-        http://klartion.local/{% if active == 'license' %}setup{% elif active == 'notion' %}setup/notion{% elif active == 'notifications' %}setup/notifications{% elif active == 'sync' %}setup/sync{% elif active == 'bank' or active == 'enable-banking' or active == 'pick-account' %}connect{% else %}status{% endif %}
-      </div>
-      <div class="chrome-meta">Klartion desktop shell</div>
-    </header>
+    <aside class="shell-sidebar">
+      <a class="logo" href="/">
+        <div class="logo-mark">K</div>
+        <span class="logo-name">Klartion</span>
+      </a>
 
-    <div class="shell-workspace">
-      <aside class="shell-sidebar">
-        <a class="logo" href="/">
-          <div class="logo-mark">K</div>
-          <span class="logo-name">Klartion</span>
+      <nav class="shell-nav">
+        <a href="/setup" {% if active == 'license' %}class="active"{% endif %}>
+          <span class="nav-icon">&#x1F511;</span> License
         </a>
+        <a href="/setup/notion" {% if active == 'notion' %}class="active"{% endif %}>
+          <span class="nav-icon">&#x1F4D2;</span> Notion
+        </a>
+        <a href="/setup/notifications" {% if active == 'notifications' %}class="active"{% endif %}>
+          <span class="nav-icon">&#x2709;</span> Notifications
+        </a>
+        <a href="/setup/sync" {% if active == 'sync' %}class="active"{% endif %}>
+          <span class="nav-icon">&#x23F1;</span> Sync
+        </a>
+        <a href="/connect" {% if active in ['bank', 'enable-banking', 'pick-account'] %}class="active"{% endif %}>
+          <span class="nav-icon">&#x1F3E6;</span> Bank
+        </a>
+        <a href="/status" {% if active == 'status' %}class="active"{% endif %}>
+          <span class="nav-icon">&#x2713;</span> Status
+        </a>
+      </nav>
 
-        <nav class="shell-nav">
-          <a href="/setup" {% if active == 'license' %}class="active"{% endif %}>
-            <span class="nav-icon">&#x1F511;</span> License
-          </a>
-          <a href="/setup/notion" {% if active == 'notion' %}class="active"{% endif %}>
-            <span class="nav-icon">&#x1F4D2;</span> Notion
-          </a>
-          <a href="/setup/notifications" {% if active == 'notifications' %}class="active"{% endif %}>
-            <span class="nav-icon">&#x2709;</span> Notifications
-          </a>
-          <a href="/setup/sync" {% if active == 'sync' %}class="active"{% endif %}>
-            <span class="nav-icon">&#x23F1;</span> Sync
-          </a>
-          <a href="/connect" {% if active in ['bank', 'enable-banking', 'pick-account'] %}class="active"{% endif %}>
-            <span class="nav-icon">&#x1F3E6;</span> Bank
-          </a>
-          <a href="/status" {% if active == 'status' %}class="active"{% endif %}>
-            <span class="nav-icon">&#x2713;</span> Status
-          </a>
-        </nav>
+      <div class="shell-footer">
+        <a href="mailto:support@david-alves.com">Support</a>
+        <a href="https://klartion.com/privacy" target="_blank">Privacy</a>
+        <a href="https://klartion.com/terms" target="_blank">Terms</a>
+        <a href="https://github.com/DAdjadj/klartion" target="_blank">GitHub</a>
+        <span>v{{ app_version }}</span>
+      </div>
+    </aside>
 
-        <div class="shell-footer">
-          <a href="mailto:support@david-alves.com">Support</a>
-          <a href="https://klartion.com/privacy" target="_blank">Privacy</a>
-          <a href="https://klartion.com/terms" target="_blank">Terms</a>
-          <a href="https://github.com/DAdjadj/klartion" target="_blank">GitHub</a>
-          <span>v{{ app_version }}</span>
+    <section class="shell-content">
+      <nav class="footer-nav shell-mobile-nav">
+        <a href="/setup" {% if active == 'license' %}class="active"{% endif %}>License</a>
+        <a href="/setup/notion" {% if active == 'notion' %}class="active"{% endif %}>Notion</a>
+        <a href="/setup/notifications" {% if active == 'notifications' %}class="active"{% endif %}>Notifications</a>
+        <a href="/setup/sync" {% if active == 'sync' %}class="active"{% endif %}>Sync</a>
+        <a href="/connect" {% if active in ['bank', 'enable-banking', 'pick-account'] %}class="active"{% endif %}>Bank</a>
+        <a href="/status" {% if active == 'status' %}class="active"{% endif %}>Status</a>
+      </nav>
+
+      <div class="wrap">
+        <div class="dashboard-surface">
+          {% block steps %}{% endblock %}
+          {% block content %}{% endblock %}
         </div>
-      </aside>
-
-      <section class="shell-content">
-        <nav class="footer-nav shell-mobile-nav">
-          <a href="/setup" {% if active == 'license' %}class="active"{% endif %}>License</a>
-          <a href="/setup/notion" {% if active == 'notion' %}class="active"{% endif %}>Notion</a>
-          <a href="/setup/notifications" {% if active == 'notifications' %}class="active"{% endif %}>Notifications</a>
-          <a href="/setup/sync" {% if active == 'sync' %}class="active"{% endif %}>Sync</a>
-          <a href="/connect" {% if active in ['bank', 'enable-banking', 'pick-account'] %}class="active"{% endif %}>Bank</a>
-          <a href="/status" {% if active == 'status' %}class="active"{% endif %}>Status</a>
-        </nav>
-
-        <div class="wrap">
-          <div class="dashboard-surface">
-            {% block steps %}{% endblock %}
-            {% block content %}{% endblock %}
-          </div>
-        </div>
-      </section>
-    </div>
+      </div>
+    </section>
   </main>
 </body>
 </html>
