@@ -1,213 +1,173 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Klartion - Notifications</title>
-  <link rel="stylesheet" href="/static/style.css">
-  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-</head>
-<body>
-  <div class="wrap">
-    <a class="logo" href="/">
-      <div class="logo-mark">K</div>
-      <span class="logo-name">Klartion</span>
-    </a>
-    <div class="steps">
-      <div class="step done"></div>
-      <div class="step done"></div>
-      <div class="step active"></div>
-      <div class="step"></div>
-      <div class="step"></div>
-      <div class="step"></div>
-    </div>
-    <div class="card">
-      <div class="card-title">Notifications</div>
-      <div class="card-sub">Step 3 of 6 — how should Klartion notify you?</div>
-      {% if error %}
-        <div class="alert alert-error">{{ error }}</div>
-      {% endif %}
-      <form method="POST">
-        <label for="klartion_url" style="margin-top:0;">Your Klartion URL</label>
-        <div style="display:flex; gap:0.5rem; align-items:center;">
-          <input type="url" id="klartion_url" name="klartion_url" value="{{ klartion_url }}" placeholder="http://192.168.1.50:3001" autocomplete="off" required style="margin-bottom:0; flex:1;">
-          <button type="button" onclick="detectUrl()" style="white-space:nowrap; padding:0.5rem 0.75rem; font-size:12px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; cursor:pointer; color:var(--text);">Detect</button>
-        </div>
-        <script>
-        function detectUrl() {
-          fetch("/api/detect-url").then(r => r.json()).then(d => {
-            document.getElementById("klartion_url").value = d.url;
-          });
-        }
-        </script>
-        <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">The address you use to open Klartion in your browser. Used to redirect you back after connecting your bank.</div>
-        <label for="notify_on">When to notify</label>
-        <select id="notify_on" name="notify_on" onchange="toggleEmailFields()">
-          <option value="all" {% if notify_on == "all" %}selected{% endif %}>All syncs</option>
-          <option value="errors" {% if notify_on == "errors" %}selected{% endif %}>Errors only</option>
-          <option value="never" {% if notify_on == "never" %}selected{% endif %}>Never</option>
-        </select>
-        <div id="email-fields" {% if notify_on == "never" %}hidden{% endif %}>
-        <label for="notify_email">Send notifications to</label>
-        <input type="email" id="notify_email" name="notify_email" value="{{ notify_email }}" placeholder="you@example.com" {% if notify_on != "never" %}required{% endif %}>
-        <label for="smtp_user">Email address to send from</label>
-        <input type="text" id="smtp_user" name="smtp_user" value="{{ smtp_user }}" placeholder="you@icloud.com" autocomplete="off" {% if notify_on != "never" %}required{% endif %}>
-        <label for="smtp_password">App-specific password</label>
-        <div style="position:relative;">
-          <input type="password" id="smtp_password" name="smtp_password" value="{{ smtp_password }}" placeholder="App-specific password" autocomplete="off" {% if notify_on != "never" %}required{% endif %} style="padding-right:2.5rem;">
-          <button type="button" onclick="togglePassword()" style="position:absolute; right:0.75rem; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; color:var(--muted); font-size:12px;" id="eye-btn">Show</button>
-        </div>
-        <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">For iCloud: use an app-specific password from <a href="https://appleid.apple.com" target="_blank" style="color:var(--muted);">appleid.apple.com</a>. For Gmail: use an app password from your Google account security settings.</div>
-        <div style="margin-top:1rem;">
-          <button type="button" onclick="document.getElementById('smtp-advanced').hidden=!document.getElementById('smtp-advanced').hidden" style="background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;padding:0;">{% if smtp_from or smtp_host %}&#9662;{% else %}&#9656;{% endif %} Advanced SMTP settings</button>
-          <div id="smtp-advanced" {% if not smtp_from and not smtp_host %}hidden{% endif %}>
-            <label for="smtp_from">Sender address <span style="font-size:10px;color:var(--hint);font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
-            <input type="email" id="smtp_from" name="smtp_from" value="{{ smtp_from }}" placeholder="noreply@yourdomain.com" autocomplete="off">
-            <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">If your SMTP server sends from a different address than the login above.</div>
-            <label for="smtp_host">SMTP host <span style="font-size:10px;color:var(--hint);font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
-            <input type="text" id="smtp_host" name="smtp_host" value="{{ smtp_host }}" placeholder="smtp.gmail.com" autocomplete="off">
-            <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">Auto-detected for Gmail, iCloud, Outlook, Yahoo. Only set this if using a custom SMTP server.</div>
-          </div>
-        </div>
-        <button type="button" class="btn btn-ghost" id="test-email-btn" onclick="sendTestEmail()" style="font-size:12px;margin-top:0.5rem;">Send test email</button>
-        <div id="test-email-msg" style="font-size:12px;margin-top:6px;min-height:18px;"></div>
-        </div>
-        <button class="btn btn-primary" type="submit">Continue</button>
-      </form>
-    </div>
-    <div class="card" style="margin-top:1rem;" id="unsub-card" {% if notify_on == "never" %}hidden{% endif %}>
-      <div class="card-title" style="font-size:14px;">Email preferences</div>
-      <p style="font-size:12px;color:var(--hint);margin:0.25rem 0 0.5rem;">This controls all emails from Klartion — sync notifications, trial reminders, and product updates.</p>
-      <p id="unsub-status" style="font-size:13px;color:var(--muted);margin:0.5rem 0;"></p>
-      <button type="button" class="btn btn-ghost" id="unsub-btn" onclick="toggleUnsubscribe()" style="font-size:12px;" disabled>Loading...</button>
-      <div id="unsub-msg" style="font-size:12px;margin-top:6px;min-height:18px;"></div>
+{% extends "base.html" %}
+{% block title %}Klartion - Notifications{% endblock %}
+{% block steps %}
+<div class="steps">
+  <div class="step done"></div>
+  <div class="step done"></div>
+  <div class="step active"></div>
+  <div class="step"></div>
+  <div class="step"></div>
+  <div class="step"></div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-title">Notifications</div>
+  <div class="card-sub">Step 3 of 6 — how should Klartion notify you?</div>
+  {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+  {% endif %}
+  <form method="POST">
+    <label for="klartion_url" style="margin-top:0;">Your Klartion URL</label>
+    <div style="display:flex; gap:0.5rem; align-items:center;">
+      <input type="url" id="klartion_url" name="klartion_url" value="{{ klartion_url }}" placeholder="http://192.168.1.50:3001" autocomplete="off" required style="margin-bottom:0; flex:1;">
+      <button type="button" onclick="detectUrl()" style="white-space:nowrap; padding:0.5rem 0.75rem; font-size:12px; background:var(--surface); border:1px solid var(--border); border-radius:6px; cursor:pointer; color:var(--text);">Detect</button>
     </div>
     <script>
-    function toggleEmailFields() {
-      var isNever = document.getElementById('notify_on').value === 'never';
-      document.getElementById('email-fields').hidden = isNever;
-      document.getElementById('unsub-card').hidden = isNever;
-      ['notify_email', 'smtp_user', 'smtp_password'].forEach(function(id) {
-        document.getElementById(id).required = !isNever;
+    function detectUrl() {
+      fetch("/api/detect-url").then(r => r.json()).then(d => {
+        document.getElementById("klartion_url").value = d.url;
       });
     }
-    function togglePassword() {
-      const f = document.getElementById('smtp_password');
-      const b = document.getElementById('eye-btn');
-      if (f.type === 'password') { f.type = 'text'; b.textContent = 'Hide'; }
-      else { f.type = 'password'; b.textContent = 'Show'; }
-    }
-    async function sendTestEmail() {
-      var btn = document.getElementById('test-email-btn');
-      var msg = document.getElementById('test-email-msg');
-      btn.textContent = 'Sending...';
-      btn.disabled = true;
-      try {
-        var res = await fetch('/email/test', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            notify_email: document.getElementById('notify_email').value,
-            smtp_user: document.getElementById('smtp_user').value,
-            smtp_password: document.getElementById('smtp_password').value,
-            smtp_from: document.getElementById('smtp_from') ? document.getElementById('smtp_from').value : '',
-            smtp_host: document.getElementById('smtp_host') ? document.getElementById('smtp_host').value : ''
-          })
-        });
-        var data = await res.json();
-        if (res.ok) {
-          msg.textContent = 'Test email sent — check your inbox.';
-          msg.style.color = '#2d7a4f';
-        } else {
-          msg.textContent = data.error || 'Failed to send.';
-          msg.style.color = '#dc2626';
-        }
-      } catch(e) {
-        msg.textContent = 'Failed to send.';
-        msg.style.color = '#dc2626';
-      }
-      btn.textContent = 'Send test email';
-      btn.disabled = false;
-    }
-    var _isUnsub = false;
-    async function checkUnsubStatus() {
-      var email = document.getElementById('notify_email').value.trim();
-      if (!email) {
-        document.getElementById('unsub-status').textContent = 'Enter a notification email above to manage email preferences.';
-        document.getElementById('unsub-btn').style.display = 'none';
-        return;
-      }
-      try {
-        var res = await fetch('/email/unsubscribe-status');
-        var data = await res.json();
-        _isUnsub = data.unsubscribed;
-        updateUnsubUI();
-      } catch(e) {
-        document.getElementById('unsub-status').textContent = 'Could not check email status.';
-        document.getElementById('unsub-btn').style.display = 'none';
-      }
-    }
-    function updateUnsubUI() {
-      var btn = document.getElementById('unsub-btn');
-      var status = document.getElementById('unsub-status');
-      btn.style.display = '';
-      btn.disabled = false;
-      if (_isUnsub) {
-        status.textContent = 'You are unsubscribed from all Klartion emails.';
-        btn.textContent = 'Re-enable emails';
-        btn.className = 'btn btn-ghost';
-        btn.style.color = '';
-      } else {
-        status.textContent = 'You are currently receiving email notifications.';
-        btn.textContent = 'Stop all emails';
-        btn.className = 'btn btn-ghost';
-        btn.style.color = '#dc2626';
-      }
-    }
-    async function toggleUnsubscribe() {
-      var btn = document.getElementById('unsub-btn');
-      var msg = document.getElementById('unsub-msg');
-      btn.disabled = true;
-      btn.textContent = _isUnsub ? 'Re-enabling...' : 'Unsubscribing...';
-      try {
-        var endpoint = _isUnsub ? '/email/resubscribe' : '/email/unsubscribe';
-        var res = await fetch(endpoint, { method: 'POST' });
-        var data = await res.json();
-        if (res.ok) {
-          _isUnsub = !_isUnsub;
-          updateUnsubUI();
-          msg.textContent = _isUnsub ? 'You have been unsubscribed from all emails.' : 'Emails have been re-enabled.';
-          msg.style.color = '#2d7a4f';
-        } else {
-          msg.textContent = data.error || 'Something went wrong.';
-          msg.style.color = '#dc2626';
-          btn.disabled = false;
-        }
-      } catch(e) {
-        msg.textContent = 'Request failed.';
-        msg.style.color = '#dc2626';
-        btn.disabled = false;
-      }
-    }
-    checkUnsubStatus();
     </script>
-    <nav class="footer-nav">
-      <a href="/setup">License</a>
-      <a href="/setup/notion">Notion</a>
-      <a href="/setup/notifications" class="active">Notifications</a>
-      <a href="/setup/sync">Sync</a>
-      <a href="/connect">Bank</a>
-      <a href="/status">Status</a>
-    </nav>
-  </div>
-    <footer class="app-footer" style="justify-content:space-between;">
-      <div style="display:flex;gap:1.5rem;">
-        <a href="mailto:support@david-alves.com">Support</a>
-        <a href="https://klartion.com/privacy" target="_blank">Privacy</a>
-        <a href="https://klartion.com/terms" target="_blank">Terms</a>
-        <a href="https://github.com/DAdjadj/klartion" target="_blank">GitHub</a>
+    <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">The address you use to open Klartion in your browser. Used to redirect you back after connecting your bank.</div>
+    <label for="notify_email">Send notifications to</label>
+    <input type="email" id="notify_email" name="notify_email" value="{{ notify_email }}" placeholder="you@example.com" required>
+    <label for="notify_on">When to notify</label>
+    <select id="notify_on" name="notify_on">
+      <option value="all" {% if notify_on == "all" %}selected{% endif %}>All syncs</option>
+      <option value="errors" {% if notify_on == "errors" %}selected{% endif %}>Errors only</option>
+    </select>
+    <label for="smtp_user">Email address to send from</label>
+    <input type="text" id="smtp_user" name="smtp_user" value="{{ smtp_user }}" placeholder="you@icloud.com" autocomplete="off" required>
+    <label for="smtp_password">App-specific password</label>
+    <div style="position:relative;">
+      <input type="password" id="smtp_password" name="smtp_password" value="{{ smtp_password }}" placeholder="App-specific password" autocomplete="off" required style="padding-right:2.5rem;">
+      <button type="button" onclick="togglePassword()" style="position:absolute; right:0.75rem; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; color:var(--muted); font-size:12px;" id="eye-btn">Show</button>
+    </div>
+    <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">For iCloud: use an app-specific password from <a href="https://appleid.apple.com" target="_blank" style="color:var(--muted);">appleid.apple.com</a>. For Gmail: use an app password from your Google account security settings.</div>
+    <div style="margin-top:1rem;">
+      <button type="button" onclick="document.getElementById('smtp-advanced').hidden=!document.getElementById('smtp-advanced').hidden" style="background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;padding:0;">{% if smtp_from or smtp_host %}&#9662;{% else %}&#9656;{% endif %} Advanced SMTP settings</button>
+      <div id="smtp-advanced" {% if not smtp_from and not smtp_host %}hidden{% endif %}>
+        <label for="smtp_from">Sender address <span style="font-size:10px;color:var(--hint);font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
+        <input type="email" id="smtp_from" name="smtp_from" value="{{ smtp_from }}" placeholder="noreply@yourdomain.com" autocomplete="off">
+        <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">If your SMTP server sends from a different address than the login above.</div>
+        <label for="smtp_host">SMTP host <span style="font-size:10px;color:var(--hint);font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></label>
+        <input type="text" id="smtp_host" name="smtp_host" value="{{ smtp_host }}" placeholder="smtp.gmail.com" autocomplete="off">
+        <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">Auto-detected for Gmail, iCloud, Outlook, Yahoo. Only set this if using a custom SMTP server.</div>
       </div>
-      <span style="color:var(--muted);font-size:12px;">v{{ app_version }}</span>
-    </footer>
-</body>
-</html>
+    </div>
+    <button type="button" class="btn btn-ghost" id="test-email-btn" onclick="sendTestEmail()" style="font-size:12px;margin-top:0.5rem;">Send test email</button>
+    <div id="test-email-msg" style="font-size:12px;margin-top:6px;min-height:18px;"></div>
+    <button class="btn btn-primary" type="submit">Continue</button>
+  </form>
+</div>
+<div class="card" style="margin-top:1rem;" id="unsub-card">
+  <div class="card-title" style="font-size:14px;">Email preferences</div>
+  <p style="font-size:12px;color:var(--hint);margin:0.25rem 0 0.5rem;">This controls all emails from Klartion — sync notifications, trial reminders, and product updates.</p>
+  <p id="unsub-status" style="font-size:13px;color:var(--muted);margin:0.5rem 0;"></p>
+  <button type="button" class="btn btn-ghost" id="unsub-btn" onclick="toggleUnsubscribe()" style="font-size:12px;" disabled>Loading...</button>
+  <div id="unsub-msg" style="font-size:12px;margin-top:6px;min-height:18px;"></div>
+</div>
+<script>
+function togglePassword() {
+  const f = document.getElementById('smtp_password');
+  const b = document.getElementById('eye-btn');
+  if (f.type === 'password') { f.type = 'text'; b.textContent = 'Hide'; }
+  else { f.type = 'password'; b.textContent = 'Show'; }
+}
+async function sendTestEmail() {
+  var btn = document.getElementById('test-email-btn');
+  var msg = document.getElementById('test-email-msg');
+  btn.textContent = 'Sending...';
+  btn.disabled = true;
+  try {
+    var res = await fetch('/email/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        notify_email: document.getElementById('notify_email').value,
+        smtp_user: document.getElementById('smtp_user').value,
+        smtp_password: document.getElementById('smtp_password').value,
+        smtp_from: document.getElementById('smtp_from') ? document.getElementById('smtp_from').value : '',
+        smtp_host: document.getElementById('smtp_host') ? document.getElementById('smtp_host').value : ''
+      })
+    });
+    var data = await res.json();
+    if (res.ok) {
+      msg.textContent = 'Test email sent — check your inbox.';
+      msg.style.color = '#2d7a4f';
+    } else {
+      msg.textContent = data.error || 'Failed to send.';
+      msg.style.color = '#dc2626';
+    }
+  } catch(e) {
+    msg.textContent = 'Failed to send.';
+    msg.style.color = '#dc2626';
+  }
+  btn.textContent = 'Send test email';
+  btn.disabled = false;
+}
+var _isUnsub = false;
+async function checkUnsubStatus() {
+  var email = document.getElementById('notify_email').value.trim();
+  if (!email) {
+    document.getElementById('unsub-status').textContent = 'Enter a notification email above to manage email preferences.';
+    document.getElementById('unsub-btn').style.display = 'none';
+    return;
+  }
+  try {
+    var res = await fetch('/email/unsubscribe-status');
+    var data = await res.json();
+    _isUnsub = data.unsubscribed;
+    updateUnsubUI();
+  } catch(e) {
+    document.getElementById('unsub-status').textContent = 'Could not check email status.';
+    document.getElementById('unsub-btn').style.display = 'none';
+  }
+}
+function updateUnsubUI() {
+  var btn = document.getElementById('unsub-btn');
+  var status = document.getElementById('unsub-status');
+  btn.style.display = '';
+  btn.disabled = false;
+  if (_isUnsub) {
+    status.textContent = 'You are unsubscribed from all Klartion emails.';
+    btn.textContent = 'Re-enable emails';
+    btn.className = 'btn btn-ghost';
+    btn.style.color = '';
+  } else {
+    status.textContent = 'You are currently receiving email notifications.';
+    btn.textContent = 'Stop all emails';
+    btn.className = 'btn btn-ghost';
+    btn.style.color = '#dc2626';
+  }
+}
+async function toggleUnsubscribe() {
+  var btn = document.getElementById('unsub-btn');
+  var msg = document.getElementById('unsub-msg');
+  btn.disabled = true;
+  btn.textContent = _isUnsub ? 'Re-enabling...' : 'Unsubscribing...';
+  try {
+    var endpoint = _isUnsub ? '/email/resubscribe' : '/email/unsubscribe';
+    var res = await fetch(endpoint, { method: 'POST' });
+    var data = await res.json();
+    if (res.ok) {
+      _isUnsub = !_isUnsub;
+      updateUnsubUI();
+      msg.textContent = _isUnsub ? 'You have been unsubscribed from all emails.' : 'Emails have been re-enabled.';
+      msg.style.color = '#2d7a4f';
+    } else {
+      msg.textContent = data.error || 'Something went wrong.';
+      msg.style.color = '#dc2626';
+      btn.disabled = false;
+    }
+  } catch(e) {
+    msg.textContent = 'Request failed.';
+    msg.style.color = '#dc2626';
+    btn.disabled = false;
+  }
+}
+checkUnsubStatus();
+</script>
+{% endblock %}

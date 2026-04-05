@@ -1,105 +1,95 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Klartion — Status</title>
-  <link rel="stylesheet" href="/static/style.css">
-  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-</head>
-<body>
-  <div class="wrap">
-    <a class="logo" href="/">
-      <div class="logo-mark">K</div>
-      <span class="logo-name">Klartion</span>
-    </a>
+{% extends "base.html" %}
+{% block title %}Klartion — Status{% endblock %}
+{% block steps %}
+<div class="steps">
+  <div class="step done"></div>
+  <div class="step done"></div>
+  <div class="step done"></div>
+  <div class="step done"></div>
+  <div class="step done"></div>
+  <div class="step done"></div>
+</div>
+{% endblock %}
+{% block content %}
+{% if is_trial and trial_expires_at %}
+<div class="alert alert-warn">
+  You are on a free trial — expires {{ trial_expires_at }}. <a href="https://buy.stripe.com/3cI8wI3gieLR56f185cMM02" target="_blank" style="color:inherit; font-weight:600;">Purchase a licence &rarr;</a>
+</div>
+{% endif %}
 
-    <div class="steps">
-      <div class="step done"></div>
-      <div class="step done"></div>
-      <div class="step done"></div>
-      <div class="step done"></div>
-      <div class="step done"></div>
-      <div class="step done"></div>
+{% if licence_sync_failed %}
+  {% if licence_limit_reached %}
+    <div class="alert alert-error">
+      Your license is inactive and syncing has stopped. <a href="/setup" target="_blank" style="color:inherit; font-weight:600;">Manage your license &rarr;</a>
     </div>
-
-    {% if is_trial and trial_expires_at %}
+  {% else %}
     <div class="alert alert-warn">
-      You are on a free trial — expires {{ trial_expires_at }}. <a href="https://buy.stripe.com/3cI8wI3gieLR56f185cMM02" target="_blank" style="color:inherit; font-weight:600;">Purchase a licence &rarr;</a>
+      Your license is not activated on this machine. <a href="/setup" style="color:inherit; font-weight:600;">Re-enter your license key &rarr;</a>
     </div>
-    {% endif %}
+  {% endif %}
+{% endif %}
 
-    {% if licence_sync_failed %}
-      {% if licence_limit_reached %}
-        <div class="alert alert-error">
-          Your license is inactive and syncing has stopped. <a href="/setup" target="_blank" style="color:inherit; font-weight:600;">Manage your license &rarr;</a>
-        </div>
-      {% else %}
-        <div class="alert alert-warn">
-          Your license is not activated on this machine. <a href="/setup" style="color:inherit; font-weight:600;">Re-enter your license key &rarr;</a>
-        </div>
-      {% endif %}
-    {% endif %}
+{% if days_left is not none and days_left <= 14 %}
+  <div class="alert alert-warn">A bank connection expires in {{ days_left }} day{{ 's' if days_left != 1 else '' }}. <a href="/connect" style="color:inherit; font-weight:600;">Manage banks &rarr;</a></div>
+{% endif %}
 
-    {% if days_left is not none and days_left <= 14 %}
-      <div class="alert alert-warn">A bank connection expires in {{ days_left }} day{{ 's' if days_left != 1 else '' }}. <a href="/connect" style="color:inherit; font-weight:600;">Manage banks &rarr;</a></div>
-    {% endif %}
-
-    {% if show_review_prompt %}
-    <div class="card" style="border-color:#37996b; border-width:1px;">
-      <div class="card-title" style="margin-bottom:0.25rem;">How's Klartion working for you?</div>
-      <div class="card-sub" style="margin-bottom:1rem;">Your feedback helps other users find Klartion.</div>
-      <form method="POST" action="/review/submit" id="review-form">
-        <div style="margin-bottom:1rem;">
-          <div id="star-rating" style="display:flex;gap:4px;font-size:28px;cursor:pointer;user-select:none;">
-            <span class="review-star" data-val="1">&#9734;</span>
-            <span class="review-star" data-val="2">&#9734;</span>
-            <span class="review-star" data-val="3">&#9734;</span>
-            <span class="review-star" data-val="4">&#9734;</span>
-            <span class="review-star" data-val="5">&#9734;</span>
-          </div>
-          <input type="hidden" name="rating" id="review-rating" value="" required>
-        </div>
-        <textarea name="review" placeholder="What do you like about Klartion? Anything we could improve?" rows="3" required style="width:100%;box-sizing:border-box;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:0.75rem;font-size:13px;font-family:inherit;resize:vertical;margin-bottom:0.75rem;"></textarea>
-        <input type="text" name="name" placeholder="Your name (optional)" style="width:100%;box-sizing:border-box;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:0.75rem;font-size:13px;font-family:inherit;margin-bottom:1rem;">
-        <div style="display:flex;align-items:center;gap:1rem;">
-          <button type="submit" class="btn" id="review-submit-btn" disabled style="background:#37996b;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;opacity:0.5;">Submit review</button>
-          <a href="/review/dismiss" onclick="event.preventDefault();fetch('/review/dismiss',{method:'POST'}).then(()=>location.reload());" style="font-size:13px;color:var(--muted);text-decoration:none;">Maybe later</a>
-        </div>
-      </form>
+{% if show_review_prompt %}
+<div class="card" style="border-color:#37996b; border-width:1px;">
+  <div class="card-title" style="margin-bottom:0.25rem;">How's Klartion working for you?</div>
+  <div class="card-sub" style="margin-bottom:1rem;">Your feedback helps other users find Klartion.</div>
+  <form method="POST" action="/review/submit" id="review-form">
+    <div style="margin-bottom:1rem;">
+      <div id="star-rating" style="display:flex;gap:4px;font-size:28px;cursor:pointer;user-select:none;">
+        <span class="review-star" data-val="1">&#9734;</span>
+        <span class="review-star" data-val="2">&#9734;</span>
+        <span class="review-star" data-val="3">&#9734;</span>
+        <span class="review-star" data-val="4">&#9734;</span>
+        <span class="review-star" data-val="5">&#9734;</span>
+      </div>
+      <input type="hidden" name="rating" id="review-rating" value="" required>
     </div>
-    <script>
-    (function() {
-      var stars = document.querySelectorAll('.review-star');
-      var ratingInput = document.getElementById('review-rating');
-      var submitBtn = document.getElementById('review-submit-btn');
-      var currentRating = 0;
-      function setStars(n) {
-        stars.forEach(function(s, i) {
-          s.innerHTML = (i < n) ? '&#9733;' : '&#9734;';
-          s.style.color = (i < n) ? '#f59e0b' : 'var(--muted)';
-        });
-      }
-      stars.forEach(function(star) {
-        star.addEventListener('click', function() {
-          currentRating = parseInt(this.dataset.val);
-          ratingInput.value = currentRating;
-          setStars(currentRating);
-          submitBtn.disabled = false;
-          submitBtn.style.opacity = '1';
-        });
-        star.addEventListener('mouseenter', function() {
-          setStars(parseInt(this.dataset.val));
-        });
-        star.addEventListener('mouseleave', function() {
-          setStars(currentRating);
-        });
-      });
-      setStars(0);
-    })();
-    </script>
-    {% endif %}
+    <textarea name="review" placeholder="What do you like about Klartion? Anything we could improve?" rows="3" required style="width:100%;box-sizing:border-box;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:0.75rem;font-size:13px;font-family:inherit;resize:vertical;margin-bottom:0.75rem;"></textarea>
+    <input type="text" name="name" placeholder="Your name (optional)" style="width:100%;box-sizing:border-box;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:0.75rem;font-size:13px;font-family:inherit;margin-bottom:1rem;">
+    <div style="display:flex;align-items:center;gap:1rem;">
+      <button type="submit" class="btn" id="review-submit-btn" disabled style="background:#37996b;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;opacity:0.5;">Submit review</button>
+      <a href="/review/dismiss" onclick="event.preventDefault();fetch('/review/dismiss',{method:'POST'}).then(()=>location.reload());" style="font-size:13px;color:var(--muted);text-decoration:none;">Maybe later</a>
+    </div>
+  </form>
+</div>
+<script>
+(function() {
+  var stars = document.querySelectorAll('.review-star');
+  var ratingInput = document.getElementById('review-rating');
+  var submitBtn = document.getElementById('review-submit-btn');
+  var currentRating = 0;
+  function setStars(n) {
+    stars.forEach(function(s, i) {
+      s.innerHTML = (i < n) ? '&#9733;' : '&#9734;';
+      s.style.color = (i < n) ? '#f59e0b' : 'var(--muted)';
+    });
+  }
+  stars.forEach(function(star) {
+    star.addEventListener('click', function() {
+      currentRating = parseInt(this.dataset.val);
+      ratingInput.value = currentRating;
+      setStars(currentRating);
+      submitBtn.disabled = false;
+      submitBtn.style.opacity = '1';
+    });
+    star.addEventListener('mouseenter', function() {
+      setStars(parseInt(this.dataset.val));
+    });
+    star.addEventListener('mouseleave', function() {
+      setStars(currentRating);
+    });
+  });
+  setStars(0);
+})();
+</script>
+{% endif %}
 
+<div class="status-layout">
+  <div class="status-main">
     <div class="card">
       <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1.5rem;">
         <div>
@@ -124,50 +114,6 @@
       <div class="stat-row"><span class="stat-label">{{ b.bank }} balance</span><span class="stat-value">{{ "{:,.2f}".format(b.amount) }} {{ b.currency }}</span></div>
       {% endfor %}
       {% endif %}
-    </div>
-
-    <div class="card">
-      <div class="card-title" style="font-size:15px; margin-bottom:0.75rem;">Sync schedule</div>
-      <form method="POST" action="/setup/sync" id="sync-form">
-        <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
-          <div id="freq-wrap">
-            <label for="sync_frequency" style="margin-top:0;font-size:11px;">Frequency</label>
-            <select id="sync_frequency" name="sync_frequency" style="margin-bottom:0;box-sizing:border-box;height:40px;">
-              <option value="0" {% if sync_frequency == "0" %}selected{% endif %}>Manual only</option>
-              <option value="6" {% if sync_frequency == "6" %}selected{% endif %}>Every 6 hours</option>
-              <option value="12" {% if sync_frequency == "12" %}selected{% endif %}>Every 12 hours</option>
-              <option value="24" {% if sync_frequency == "24" %}selected{% endif %}>Every 24 hours</option>
-            </select>
-          </div>
-          <div id="start-time-wrap" {% if sync_frequency == "0" %}hidden{% endif %}>
-            <label for="sync_time" style="margin-top:0;font-size:11px;">Start time</label>
-            <input type="text" id="sync_time" name="sync_time" value="{{ sync_time }}" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="HH:MM" maxlength="5" style="margin-bottom:0;box-sizing:border-box;height:40px;width:5.5em;text-align:center;">
-          </div>
-          <button class="btn btn-ghost" type="submit" style="font-size:12px;">Save</button>
-        </div>
-        <div style="font-size:12px;color:var(--muted);margin-top:8px;" id="sync-times-preview">{% if sync_frequency != "0" %}Syncs at {{ sync_times }}{% endif %}</div>
-      </form>
-      <script>
-      function updateSyncPreview() {
-        var freq = parseInt(document.getElementById('sync_frequency').value);
-        var wrap = document.getElementById('start-time-wrap');
-        var preview = document.getElementById('sync-times-preview');
-        wrap.hidden = (freq === 0);
-        if (freq === 0) { preview.textContent = ''; return; }
-        var time = document.getElementById('sync_time').value;
-        if (!time) { preview.textContent = ''; return; }
-        var parts = time.split(':');
-        var h = parseInt(parts[0]), m = parseInt(parts[1]);
-        var times = [];
-        for (var i = 0; i < 24; i += freq) {
-          var th = (h + i) % 24;
-          times.push((th < 10 ? '0' : '') + th + ':' + (m < 10 ? '0' : '') + m);
-        }
-        preview.textContent = 'Syncs at ' + times.join(', ');
-      }
-      document.getElementById('sync_frequency').addEventListener('change', updateSyncPreview);
-      document.getElementById('sync_time').addEventListener('input', updateSyncPreview);
-      </script>
     </div>
 
     <div class="card">
@@ -209,148 +155,178 @@
         <div style="color:var(--muted);font-size:13px;text-align:center;padding:2rem 0;line-height:1.6;">No syncs yet.<br>Click "Sync now" above or wait for the scheduled sync.</div>
       {% endif %}
     </div>
-
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-      <button class="btn btn-ghost" id="update-btn" onclick="runUpdate()" style="font-size:12px;{% if update_available %}background:var(--success, #37996b);color:#fff;border-color:transparent;{% endif %}">{% if update_available %}Update available{% else %}Check for updates{% endif %}</button>
-      <button class="btn btn-ghost" id="download-logs-btn" onclick="downloadLogs()" style="font-size:12px;">Download logs</button>
-      {% if activation_usage > 0 %}
-      <form method="POST" action="/settings/deactivate" onsubmit="return confirm('This will deactivate your license on this machine. You can re-enter your key to reactivate. Continue?');" style="margin:0;">
-        <button type="submit" class="btn btn-ghost" style="color:var(--danger, #c0392b);font-size:12px;">Deactivate license ({{ activation_usage }}/{{ activation_limit }})</button>
-      </form>
-      {% endif %}
-    </div>
-    <a href="/connect" style="display:block;text-align:center;margin-top:8px;background:#111;color:#fff;border-radius:8px;padding:12px;font-size:14px;font-weight:600;text-decoration:none;">&larr; Manage banks</a>
-    <div id="update-status" style="font-size:12px; color:var(--muted); margin-top:0.5rem; display:none;"></div>
-
-    <nav class="footer-nav">
-      <a href="/setup">License</a>
-      <a href="/setup/notion">Notion</a>
-      <a href="/setup/notifications">Notifications</a>
-      <a href="/setup/sync">Sync</a>
-      <a href="/connect">Bank</a>
-      <a href="/status" class="active">Status</a>
-    </nav>
   </div>
 
-  <script>
-    async function downloadLogs() {
-      var btn = document.getElementById('download-logs-btn');
-      btn.textContent = 'Fetching...';
-      btn.disabled = true;
-      try {
-        var resp = await fetch('/api/logs?lines=500');
-        var data = await resp.json();
-        if (data.logs) {
-          var blob = new Blob([data.logs], { type: 'text/plain' });
-          var a = document.createElement('a');
-          a.href = URL.createObjectURL(blob);
-          var now = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-          a.download = 'klartion-logs-' + now + '-' + (data.version || 'unknown') + '.txt';
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(a.href);
+  <div class="status-side">
+    <div class="card">
+      <div class="card-title" style="font-size:15px; margin-bottom:0.75rem;">Sync schedule</div>
+      <form method="POST" action="/setup/sync" id="sync-form">
+        <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
+          <div id="freq-wrap">
+            <label for="sync_frequency" style="margin-top:0;font-size:11px;">Frequency</label>
+            <select id="sync_frequency" name="sync_frequency" style="margin-bottom:0;box-sizing:border-box;height:40px;">
+              <option value="0" {% if sync_frequency == "0" %}selected{% endif %}>Manual only</option>
+              <option value="6" {% if sync_frequency == "6" %}selected{% endif %}>Every 6 hours</option>
+              <option value="12" {% if sync_frequency == "12" %}selected{% endif %}>Every 12 hours</option>
+              <option value="24" {% if sync_frequency == "24" %}selected{% endif %}>Every 24 hours</option>
+            </select>
+          </div>
+          <div id="start-time-wrap" {% if sync_frequency == "0" %}hidden{% endif %}>
+            <label for="sync_time" style="margin-top:0;font-size:11px;">Start time</label>
+            <input type="text" id="sync_time" name="sync_time" value="{{ sync_time }}" pattern="[0-2][0-9]:[0-5][0-9]" placeholder="HH:MM" maxlength="5" style="margin-bottom:0;box-sizing:border-box;height:40px;width:5.5em;text-align:center;">
+          </div>
+          <button class="btn btn-ghost" type="submit" style="font-size:12px;">Save</button>
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-top:8px;" id="sync-times-preview">{% if sync_frequency != "0" %}Syncs at {{ sync_times }}{% endif %}</div>
+      </form>
+      <script>
+      function updateSyncPreview() {
+        var freq = parseInt(document.getElementById('sync_frequency').value);
+        var wrap = document.getElementById('start-time-wrap');
+        var preview = document.getElementById('sync-times-preview');
+        wrap.hidden = (freq === 0);
+        if (freq === 0) { preview.textContent = ''; return; }
+        var time = document.getElementById('sync_time').value;
+        if (!time) { preview.textContent = ''; return; }
+        var parts = time.split(':');
+        var h = parseInt(parts[0]), m = parseInt(parts[1]);
+        var times = [];
+        for (var i = 0; i < 24; i += freq) {
+          var th = (h + i) % 24;
+          times.push((th < 10 ? '0' : '') + th + ':' + (m < 10 ? '0' : '') + m);
         }
-      } catch(e) {}
-      btn.textContent = 'Download logs';
-      btn.disabled = false;
-    }
+        preview.textContent = 'Syncs at ' + times.join(', ');
+      }
+      function toggleStartTime() { updateSyncPreview(); }
+      document.getElementById('sync_frequency').addEventListener('change', updateSyncPreview);
+      document.getElementById('sync_time').addEventListener('input', updateSyncPreview);
+      updateSyncPreview();
+      </script>
+    </div>
 
-    async function runUpdate() {
-      const btn = document.getElementById('update-btn');
-      const status = document.getElementById('update-status');
-      btn.textContent = 'Checking...';
-      btn.disabled = true;
-      status.style.display = 'block';
-      status.textContent = 'Checking for updates...';
-      try {
-        const check = await fetch('/update/check');
-        const checkData = await check.json();
-        if (!checkData.available) {
-          status.textContent = 'Already up to date.';
-          btn.textContent = 'Check for updates';
-          btn.disabled = false;
-          setTimeout(function() { status.style.display = 'none'; }, 3000);
-          return;
-        }
-        status.textContent = 'Update found. Installing...';
-        const resp = await fetch('/update/run', { method: 'POST' });
-        const data = await resp.json();
-        if (data.updating) {
-          status.textContent = 'Restarting...';
-          setTimeout(function pollServer() {
-            fetch('/health').then(function(r) { if (r.ok) location.reload(); else setTimeout(pollServer, 2000); }).catch(function() { setTimeout(pollServer, 2000); });
-          }, 5000);
-        } else if (data.error) {
-          status.textContent = data.error;
-          btn.textContent = 'Check for updates';
-          btn.disabled = false;
-        }
-      } catch(e) {
-        status.textContent = 'Update may be in progress. Refreshing...';
+    <div class="card">
+      <div class="card-title" style="font-size:15px;margin-bottom:0;">Actions</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:1rem;">
+        <button class="btn btn-ghost" id="update-btn" onclick="runUpdate()" style="font-size:12px;{% if update_available %}background:var(--success, #37996b);color:#fff;border-color:transparent;{% endif %}">{% if update_available %}Update available{% else %}Check for updates{% endif %}</button>
+        <button class="btn btn-ghost" id="download-logs-btn" onclick="downloadLogs()" style="font-size:12px;">Download logs</button>
+        {% if activation_usage > 0 %}
+        <form method="POST" action="/settings/deactivate" onsubmit="return confirm('This will deactivate your license on this machine. You can re-enter your key to reactivate. Continue?');" style="margin:0;">
+          <button type="submit" class="btn btn-ghost" style="color:var(--danger, #c0392b);font-size:12px;">Deactivate license ({{ activation_usage }}/{{ activation_limit }})</button>
+        </form>
+        {% endif %}
+      </div>
+      <a href="/connect" style="display:block;text-align:center;margin-top:8px;background:#111;color:#fff;border-radius:8px;padding:12px;font-size:14px;font-weight:600;text-decoration:none;">&larr; Manage banks</a>
+      <div id="update-status" style="font-size:12px; color:var(--muted); margin-top:0.5rem; display:none;"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  async function downloadLogs() {
+    var btn = document.getElementById('download-logs-btn');
+    btn.textContent = 'Fetching...';
+    btn.disabled = true;
+    try {
+      var resp = await fetch('/api/logs?lines=500');
+      var data = await resp.json();
+      if (data.logs) {
+        var blob = new Blob([data.logs], { type: 'text/plain' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        var now = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        a.download = 'klartion-logs-' + now + '-' + (data.version || 'unknown') + '.txt';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(a.href);
+      }
+    } catch(e) {}
+    btn.textContent = 'Download logs';
+    btn.disabled = false;
+  }
+
+  async function runUpdate() {
+    const btn = document.getElementById('update-btn');
+    const status = document.getElementById('update-status');
+    btn.textContent = 'Checking...';
+    btn.disabled = true;
+    status.style.display = 'block';
+    status.textContent = 'Checking for updates...';
+    try {
+      const check = await fetch('/update/check');
+      const checkData = await check.json();
+      if (!checkData.available) {
+        status.textContent = 'Already up to date.';
+        btn.textContent = 'Check for updates';
+        btn.disabled = false;
+        setTimeout(function() { status.style.display = 'none'; }, 3000);
+        return;
+      }
+      status.textContent = 'Update found. Installing...';
+      const resp = await fetch('/update/run', { method: 'POST' });
+      const data = await resp.json();
+      if (data.updating) {
+        status.textContent = 'Restarting...';
         setTimeout(function pollServer() {
           fetch('/health').then(function(r) { if (r.ok) location.reload(); else setTimeout(pollServer, 2000); }).catch(function() { setTimeout(pollServer, 2000); });
-        }, 3000);
-      }
-    }
-
-    // Check for updates on page load
-    fetch('/update/check').then(function(r) { return r.json(); }).then(function(d) {
-      if (d.available) {
-        var btn = document.getElementById('update-btn');
-        btn.textContent = 'Update available';
-        btn.style.background = 'var(--success, #37996b)';
-        btn.style.color = '#fff';
-        btn.style.borderColor = 'transparent';
-      }
-    }).catch(function() {});
-
-    async function runSync() {
-      const btn = document.getElementById('sync-btn');
-      btn.textContent = 'Syncing...';
-      btn.style.opacity = '0.6';
-      btn.disabled = true;
-      try {
-        await fetch('/sync/now', { method: 'POST' });
-        var attempts = 0;
-        var poll = setInterval(function() {
-          attempts++;
-          fetch('/api/sync-status').then(function(r) { return r.json(); }).then(function(d) {
-            if (!d.running && attempts > 1) {
-              clearInterval(poll);
-              location.reload();
-            }
-          }).catch(function() {
-            if (attempts > 60) {
-              clearInterval(poll);
-              location.reload();
-            }
-          });
-        }, 2000);
-      } catch(e) {
-        btn.textContent = 'Error — try again';
-        btn.style.opacity = '1';
+        }, 5000);
+      } else if (data.error) {
+        status.textContent = data.error;
+        btn.textContent = 'Check for updates';
         btn.disabled = false;
       }
+    } catch(e) {
+      status.textContent = 'Update may be in progress. Refreshing...';
+      setTimeout(function pollServer() {
+        fetch('/health').then(function(r) { if (r.ok) location.reload(); else setTimeout(pollServer, 2000); }).catch(function() { setTimeout(pollServer, 2000); });
+      }, 3000);
     }
+  }
 
-    document.querySelectorAll('.utc-time').forEach(function(el) {
-      var raw = el.textContent.trim();
-      if (!raw || raw === 'Never') return;
-      var d = new Date(raw + 'Z');
-      if (isNaN(d)) return;
-      el.textContent = d.toLocaleString(undefined, {year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
-    });
-  </script>
+  fetch('/update/check').then(function(r) { return r.json(); }).then(function(d) {
+    if (d.available) {
+      var btn = document.getElementById('update-btn');
+      btn.textContent = 'Update available';
+      btn.style.background = '#37996b';
+      btn.style.color = '#fff';
+      btn.style.borderColor = 'transparent';
+    }
+  }).catch(function() {});
 
-  <footer class="app-footer" style="justify-content:space-between;">
-    <div style="display:flex;gap:1.5rem;">
-      <a href="mailto:support@david-alves.com">Support</a>
-      <a href="https://klartion.com/privacy" target="_blank">Privacy</a>
-      <a href="https://klartion.com/terms" target="_blank">Terms</a>
-      <a href="https://github.com/DAdjadj/klartion" target="_blank">GitHub</a>
-    </div>
-    <span style="color:var(--muted);font-size:12px;">v{{ app_version }}</span>
-  </footer>
-</body>
-</html>
+  async function runSync() {
+    const btn = document.getElementById('sync-btn');
+    btn.textContent = 'Syncing...';
+    btn.style.opacity = '0.6';
+    btn.disabled = true;
+    try {
+      await fetch('/sync/now', { method: 'POST' });
+      var attempts = 0;
+      var poll = setInterval(function() {
+        attempts++;
+        fetch('/api/sync-status').then(function(r) { return r.json(); }).then(function(d) {
+          if (!d.running && attempts > 1) {
+            clearInterval(poll);
+            location.reload();
+          }
+        }).catch(function() {
+          if (attempts > 60) {
+            clearInterval(poll);
+            location.reload();
+          }
+        });
+      }, 2000);
+    } catch(e) {
+      btn.textContent = 'Error — try again';
+      btn.style.opacity = '1';
+      btn.disabled = false;
+    }
+  }
+  document.querySelectorAll('.utc-time').forEach(function(el) {
+    var raw = el.textContent.trim();
+    if (!raw || raw === 'Never') return;
+    var d = new Date(raw + 'Z');
+    if (isNaN(d)) return;
+    el.textContent = d.toLocaleString(undefined, {year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
+  });
+</script>
+{% endblock %}

@@ -1,235 +1,195 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Klartion — Bank</title>
-  <link rel="stylesheet" href="/static/style.css">
-  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-</head>
-<body>
-  <div class="wrap">
-    <a class="logo" href="/">
-      <div class="logo-mark">K</div>
-      <span class="logo-name">Klartion</span>
-    </a>
+{% extends "base.html" %}
+{% block title %}Klartion — Bank{% endblock %}
+{% block steps %}
+<div class="steps">
+  <div class="step done"></div>
+  <div class="step done"></div>
+  <div class="step done"></div>
+  <div class="step done"></div>
+  <div class="step {% if tokens %}done{% else %}active{% endif %}"></div>
+  <div class="step"></div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-title">Bank</div>
+  <div class="card-sub">Step 5 of 6 — authorise read-only access via Enable Banking</div>
 
-    <div class="steps">
-      <div class="step done"></div>
-      <div class="step done"></div>
-      <div class="step done"></div>
-      <div class="step done"></div>
-      <div class="step {% if tokens %}done{% else %}active{% endif %}"></div>
-      <div class="step"></div>
+  {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+  {% endif %}
+  {% if success %}
+    <div class="alert alert-success">
+      Bank connected. Your first sync runs at {{ sync_time }} — or trigger it manually from the status page.
+    </div>
+  {% endif %}
+
+  {% if not pem_ready and not auth_url %}
+    <form method="POST" enctype="multipart/form-data">
+      <input type="hidden" name="action" value="upload_pem">
+      <label style="margin-top:0;">Private key file (.pem)</label>
+      <input type="file" name="pem_file" id="pem-file-input" accept=".pem" required onchange="autoFillAppId(this)">
+      <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">The <code style="font-size:11px; color:var(--muted);">.pem</code> key file downloaded from Enable Banking. It stays on your server and is never shared.</div>
+      <label>Application ID <span style="font-size:11px; font-weight:400; color:var(--hint);">(auto-filled from filename)</span></label>
+      <input type="text" name="eb_app_id" id="eb-app-id-input" value="{{ eb_app_id }}" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" required>
+      <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">Filled automatically from your .pem filename. From your <a href="https://enablebanking.com/" target="_blank" style="color:var(--muted);">Enable Banking dashboard</a> under Applications.</div>
+      <script>
+      function autoFillAppId(input) {
+        if (!input.files || !input.files[0]) return;
+        var filename = input.files[0].name;
+        var appId = filename.replace(/\.pem$/i, '');
+        if (appId.length === 36) {
+          document.getElementById('eb-app-id-input').value = appId;
+        }
+      }
+      </script>
+      <button class="btn btn-primary" type="submit">Save & continue →</button>
+    </form>
+
+  {% elif pem_ready and not auth_url %}
+    <div style="margin-bottom:1.5rem; padding:10px 14px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; font-size:13px; color:#166534; display:flex; align-items:center; gap:8px;">
+      <span>&#10003;</span> Private key loaded. <a href="/connect/reset-pem" style="color:var(--muted); font-size:12px; margin-left:auto;">Replace</a>
     </div>
 
-    <div class="card">
-      <div class="card-title">Bank</div>
-      <div class="card-sub">Step 5 of 6 — authorise read-only access via Enable Banking</div>
-
-      {% if error %}
-        <div class="alert alert-error">{{ error }}</div>
-      {% endif %}
-      {% if success %}
-        <div class="alert alert-success">
-          Bank connected. Your first sync runs at {{ sync_time }} — or trigger it manually from the status page.
-        </div>
-      {% endif %}
-
-      {% if not pem_ready and not auth_url %}
-        <form method="POST" enctype="multipart/form-data">
-          <input type="hidden" name="action" value="upload_pem">
-          <label style="margin-top:0;">Private key file (.pem)</label>
-          <input type="file" name="pem_file" id="pem-file-input" accept=".pem" required onchange="autoFillAppId(this)">
-          <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">The <code style="font-size:11px; color:var(--muted);">.pem</code> key file downloaded from Enable Banking. It stays on your server and is never shared.</div>
-          <label>Application ID <span style="font-size:11px; font-weight:400; color:var(--hint);">(auto-filled from filename)</span></label>
-          <input type="text" name="eb_app_id" id="eb-app-id-input" value="{{ eb_app_id }}" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" required>
-          <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">Filled automatically from your .pem filename. From your <a href="https://enablebanking.com/" target="_blank" style="color:var(--muted);">Enable Banking dashboard</a> under Applications.</div>
-          <script>
-          function autoFillAppId(input) {
-            if (!input.files || !input.files[0]) return;
-            var filename = input.files[0].name;
-            var appId = filename.replace(/\.pem$/i, '');
-            if (appId.length === 36) {
-              document.getElementById('eb-app-id-input').value = appId;
-            }
-          }
-          </script>
-          <button class="btn btn-primary" type="submit">Save & continue →</button>
-        </form>
-
-      {% elif pem_ready and not auth_url %}
-        <div style="margin-bottom:1.5rem; padding:10px 14px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; font-size:13px; color:#166534; display:flex; align-items:center; gap:8px;">
-          <span>&#10003;</span> Private key loaded. <a href="/connect/reset-pem" style="color:var(--muted); font-size:12px; margin-left:auto;">Replace</a>
-        </div>
-
-        {% if all_tokens %}
-        <div style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.8px; color:var(--muted); margin-bottom:0.5rem;">Connected accounts ({{ all_tokens|length }}/{{ bank_account_limit }})</div>
-        <div style="font-size:11px;color:var(--hint);margin-bottom:0.75rem;">Reset sync re-imports transactions from the start date. Existing transactions won't be duplicated.</div>
-        {% for t in all_tokens %}
-        <div style="margin-bottom:0.75rem; padding:12px 14px; border:1px solid var(--border); border-radius:8px;">
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div>
-              <div class="connected-pill">Connected</div>
-              <div style="margin-top:8px; font-family:var(--mono); font-size:12px; color:var(--muted);">
-                {{ loop.index }}. {{ t.bank_name }} ({{ t.bank_country }})
-              </div>
-            </div>
-            <div style="display:flex;gap:6px;">
-              <div>
-                <button type="button" class="btn btn-ghost" style="font-size:11px;padding:6px 10px;" onclick="this.style.display='none';this.nextElementSibling.style.display='flex';" id="reset-btn-{{ t.id }}">Reset sync</button>
-                <form method="POST" action="/reset-sync" style="display:none;gap:4px;align-items:center;" id="reset-form-{{ t.id }}" onsubmit="return confirm('Reset sync for this account? Transactions from the selected date will be re-imported on the next sync.');">
-                  <input type="hidden" name="token_id" value="{{ t.id }}">
-                  <input type="date" name="reset_date" value="{{ today }}" required style="font-size:11px;padding:4px 6px;">
-                  <button type="submit" class="btn btn-ghost" style="font-size:11px;padding:6px 10px;">Confirm</button>
-                  <button type="button" class="btn btn-ghost" style="font-size:11px;padding:6px 10px;color:var(--hint);" onclick="this.parentElement.style.display='none';document.getElementById('reset-btn-{{ t.id }}').style.display='';">Cancel</button>
-                </form>
-              </div>
-              <form method="POST" action="/disconnect" onsubmit="return confirm('Disconnect this bank account? Syncing will stop for this account until you reconnect.');">
-                <input type="hidden" name="token_id" value="{{ t.id }}">
-                <button type="submit" class="btn btn-danger-ghost">Disconnect</button>
-              </form>
-            </div>
+    {% if all_tokens %}
+    <div style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.8px; color:var(--muted); margin-bottom:0.5rem;">Connected accounts ({{ all_tokens|length }}/{{ bank_account_limit }})</div>
+    <div style="font-size:11px;color:var(--hint);margin-bottom:0.75rem;">Reset sync re-imports transactions from the start date. Existing transactions won't be duplicated.</div>
+    {% for t in all_tokens %}
+    <div style="margin-bottom:0.75rem; padding:12px 14px; border:1px solid var(--border); border-radius:8px;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <div class="connected-pill">Connected</div>
+          <div style="margin-top:8px; font-family:var(--mono); font-size:12px; color:var(--muted);">
+            {{ loop.index }}. {{ t.bank_name }} ({{ t.bank_country }})
           </div>
-          {% if t.expires_at %}
-          <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--hint);">
-            <span>Expires {{ t.expires_at[:10] }}</span>
-            <form method="POST" action="/connect/reauthorise" style="display:inline;">
+        </div>
+        <div style="display:flex;gap:6px;">
+          <div>
+            <button type="button" class="btn btn-ghost" style="font-size:11px;padding:6px 10px;" onclick="this.style.display='none';this.nextElementSibling.style.display='flex';" id="reset-btn-{{ t.id }}">Reset sync</button>
+            <form method="POST" action="/reset-sync" style="display:none;gap:4px;align-items:center;" id="reset-form-{{ t.id }}" onsubmit="return confirm('Reset sync for this account? Transactions from the selected date will be re-imported on the next sync.');">
               <input type="hidden" name="token_id" value="{{ t.id }}">
-              <input type="hidden" name="bank_name" value="{{ t.bank_name }}">
-              <input type="hidden" name="bank_country" value="{{ t.bank_country }}">
-              <button type="submit" style="background:none; border:none; color:var(--muted); cursor:pointer; font-size:11px; text-decoration:underline;">Re-authorise</button>
+              <input type="date" name="reset_date" value="{{ today }}" required style="font-size:11px;padding:4px 6px;">
+              <button type="submit" class="btn btn-ghost" style="font-size:11px;padding:6px 10px;">Confirm</button>
+              <button type="button" class="btn btn-ghost" style="font-size:11px;padding:6px 10px;color:var(--hint);" onclick="this.parentElement.style.display='none';document.getElementById('reset-btn-{{ t.id }}').style.display='';">Cancel</button>
             </form>
           </div>
-          {% endif %}
+          <form method="POST" action="/disconnect" onsubmit="return confirm('Disconnect this bank account? Syncing will stop for this account until you reconnect.');">
+            <input type="hidden" name="token_id" value="{{ t.id }}">
+            <button type="submit" class="btn btn-danger">Disconnect</button>
+          </form>
         </div>
-        {% endfor %}
-        <hr style="border:none; border-top:1px solid var(--border); margin:1.25rem 0;">
-        {% endif %}
-
-        {% if all_tokens|length >= bank_account_limit %}
-        <div style="padding:14px; background:var(--surface); border:1px solid var(--border); border-radius:8px; font-size:13px; color:var(--muted); text-align:center;">
-          Bank account limit reached. <a href="{{ bank_slot_url }}" target="_blank" style="color:var(--text); font-weight:600;">Add 1 more →</a>
-        </div>
-        {% else %}
-        <form method="POST" id="connect-form">
-          <input type="hidden" name="action" value="start">
-          <input type="hidden" id="inp-bank-name" name="bank_name">
-          <input type="hidden" id="inp-bank-country" name="bank_country">
-          <label style="margin-top:0;">Start syncing from</label>
-          <input type="date" name="start_sync_date" id="start-date-input" value="{{ today }}" required>
-          <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">Only transactions from this date forward will be imported for this bank.</div>
-          <label>Search your bank</label>
-          <div style="position:relative;">
-            <input type="text" id="bank-search" placeholder="Type to search 2,500+ European banks..." autocomplete="off" oninput="filterBanks(this.value)" onfocus="showDropdown()">
-            <div id="bank-dropdown" style="display:none; position:absolute; top:100%; left:0; right:0; background:#fff; border:1px solid var(--border); border-top:none; border-radius:0 0 6px 6px; max-height:220px; overflow-y:auto; z-index:100; box-shadow:0 4px 12px rgba(0,0,0,0.08);"></div>
-          </div>
-          <div id="selected-bank" style="display:none; margin-top:0.75rem; padding:10px 12px; background:var(--surface); border:1px solid var(--border); border-radius:6px; font-size:13px; align-items:center; justify-content:space-between;">
-            <span id="selected-label" style="font-weight:600;"></span>
-            <button type="button" onclick="clearBank()" style="background:none; border:none; color:var(--muted); cursor:pointer; font-size:11px; padding:0;">clear</button>
-          </div>
-          <div style="font-size:11px; color:var(--hint); margin-top:0.5rem;">Personal accounts only. 2,500+ banks across 29 European countries.</div>
-          <button class="btn btn-primary" type="submit" id="connect-btn" disabled style="background:var(--border); opacity:0.5;">Authorise bank →</button>
+      </div>
+      {% if t.expires_at %}
+      <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--hint);">
+        <span>Expires {{ t.expires_at[:10] }}</span>
+        <form method="POST" action="/connect/reauthorise" style="display:inline;">
+          <input type="hidden" name="token_id" value="{{ t.id }}">
+          <input type="hidden" name="bank_name" value="{{ t.bank_name }}">
+          <input type="hidden" name="bank_country" value="{{ t.bank_country }}">
+          <button type="submit" style="background:none; border:none; color:var(--muted); cursor:pointer; font-size:11px; text-decoration:underline;">Re-authorise</button>
         </form>
-        {% endif %}
-
-      {% elif auth_url %}
-        <div style="text-align:center; padding:0.5rem 0 1rem;">
-          <div style="font-size:15px; font-weight:600; margin-bottom:0.5rem; font-family:var(--serif);">Authorise {{ pending_bank }}</div>
-          <div style="font-size:13px; color:var(--muted); margin-bottom:1.5rem; line-height:1.6;">
-            Click the button below to open your bank login page.<br>
-            After approving, you will be returned here automatically.
-          </div>
-        </div>
-        <a href="{{ auth_url }}" class="btn btn-primary">Open {{ pending_bank }} login →</a>
-        <form method="POST" style="margin-top:0.75rem;">
-          <input type="hidden" name="action" value="cancel">
-          <button type="submit" class="btn btn-secondary" style="margin-top:0;">Cancel</button>
-        </form>
+      </div>
       {% endif %}
     </div>
-
-    {% if all_tokens and not auth_url %}
-      <div style="text-align:center;">
-        <a href="/status" class="btn btn-primary">Continue to status →</a>
-      </div>
+    {% endfor %}
+    <hr style="border:none; border-top:1px solid var(--border); margin:1.25rem 0;">
     {% endif %}
 
-    <nav class="footer-nav">
-      <a href="/setup">License</a>
-      <a href="/setup/notion">Notion</a>
-      <a href="/setup/notifications">Notifications</a>
-      <a href="/setup/sync">Sync</a>
-      <a href="/connect" class="active">Bank</a>
-      <a href="/status">Status</a>
-    </nav>
-  </div>
-
-  <script>
-    let allBanks = [];
-    async function loadBanks() {
-      try {
-        const resp = await fetch('/banks');
-        allBanks = await resp.json();
-        const q = document.getElementById('bank-search');
-        if (q && q.value.trim()) filterBanks(q.value);
-      } catch(e) { console.error('Failed to load banks', e); }
-    }
-    function filterBanks(query) {
-      if (!allBanks.length) loadBanks();
-      const dd = document.getElementById('bank-dropdown');
-      if (!query.trim()) { dd.style.display = 'none'; return; }
-      const q = query.toLowerCase();
-      const matches = allBanks.filter(b => b.name.toLowerCase().includes(q) || b.country.toLowerCase().includes(q)).slice(0, 200);
-      if (!matches.length) { dd.style.display = 'none'; return; }
-      dd.innerHTML = matches.map(b => `<div onclick="selectBank('${b.name.replace(/'/g, "\\'")}','${b.country}')" style="padding:9px 12px; cursor:pointer; font-size:13px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #f0efeb;" onmouseover="this.style.background='#f7f6f3'" onmouseout="this.style.background=''"><span>${b.name}</span><span style="font-size:11px; color:#9ca3af; font-family:monospace;">${b.country}</span></div>`).join('');
-      dd.style.display = 'block';
-    }
-    function showDropdown() { const q = document.getElementById('bank-search').value; if (q.trim()) filterBanks(q); }
-    function selectBank(name, country) {
-      document.getElementById('inp-bank-name').value = name;
-      document.getElementById('inp-bank-country').value = country;
-      document.getElementById('bank-search').value = '';
-      document.getElementById('bank-dropdown').style.display = 'none';
-      document.getElementById('selected-label').textContent = name + ' (' + country + ')';
-      document.getElementById('selected-bank').style.display = 'flex';
-      var btn = document.getElementById('connect-btn');
-      btn.disabled = false;
-      btn.style.background = '#37996b';
-      btn.style.opacity = '1';
-    }
-    function clearBank() {
-      document.getElementById('inp-bank-name').value = '';
-      document.getElementById('inp-bank-country').value = '';
-      document.getElementById('bank-search').value = '';
-      document.getElementById('selected-bank').style.display = 'none';
-      var btn = document.getElementById('connect-btn');
-      btn.disabled = true;
-      btn.style.background = 'var(--border)';
-      btn.style.opacity = '0.5';
-    }
-    document.addEventListener('click', function(e) {
-      const dd = document.getElementById('bank-dropdown');
-      if (dd && !dd.contains(e.target) && e.target.id !== 'bank-search') dd.style.display = 'none';
-    });
-    loadBanks();
-    function startSpinner() {
-      setTimeout(() => {
-        document.getElementById('pre-msg').style.display = 'none';
-        document.getElementById('spinner').style.display = 'block';
-        document.getElementById('waiting-msg').style.display = 'block';
-      }, 500);
-    }
-  </script>
-
-  <footer class="app-footer" style="justify-content:space-between;">
-    <div style="display:flex;gap:1.5rem;">
-      <a href="mailto:support@david-alves.com">Support</a>
-      <a href="https://klartion.com/privacy" target="_blank">Privacy</a>
-      <a href="https://klartion.com/terms" target="_blank">Terms</a>
-      <a href="https://github.com/DAdjadj/klartion" target="_blank">GitHub</a>
+    {% if all_tokens|length >= bank_account_limit %}
+    <div style="padding:14px; background:var(--surface); border:1px solid var(--border); border-radius:8px; font-size:13px; color:var(--muted); text-align:center;">
+      Bank account limit reached. <a href="{{ bank_slot_url }}" target="_blank" style="color:var(--text); font-weight:600;">Add 1 more →</a>
     </div>
-    <span style="color:var(--muted);font-size:12px;">v{{ app_version }}</span>
-  </footer>
-</body>
-</html>
+    {% else %}
+    <form method="POST" id="connect-form">
+      <input type="hidden" name="action" value="start">
+      <input type="hidden" id="inp-bank-name" name="bank_name">
+      <input type="hidden" id="inp-bank-country" name="bank_country">
+      <label style="margin-top:0;">Start syncing from</label>
+      <input type="date" name="start_sync_date" id="start-date-input" value="{{ today }}" required>
+      <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">Only transactions from this date forward will be imported for this bank.</div>
+      <label>Search your bank</label>
+      <div style="position:relative;">
+        <input type="text" id="bank-search" placeholder="Type to search 2,500+ European banks..." autocomplete="off" oninput="filterBanks(this.value)" onfocus="showDropdown()">
+        <div id="bank-dropdown" style="display:none; position:absolute; top:100%; left:0; right:0; background:#fff; border:1px solid var(--border); border-top:none; border-radius:0 0 6px 6px; max-height:220px; overflow-y:auto; z-index:100; box-shadow:0 4px 12px rgba(0,0,0,0.08);"></div>
+      </div>
+      <div id="selected-bank" style="display:none; margin-top:0.75rem; padding:10px 12px; background:var(--surface); border:1px solid var(--border); border-radius:6px; font-size:13px; align-items:center; justify-content:space-between;">
+        <span id="selected-label" style="font-weight:600;"></span>
+        <button type="button" onclick="clearBank()" style="background:none; border:none; color:var(--muted); cursor:pointer; font-size:11px; padding:0;">clear</button>
+      </div>
+      <div style="font-size:11px; color:var(--hint); margin-top:0.5rem;">Personal accounts only. 2,500+ banks across 29 European countries.</div>
+      <button class="btn btn-primary" type="submit" id="connect-btn" disabled style="background:var(--border); opacity:0.5;">Authorise bank →</button>
+    </form>
+    {% endif %}
+
+  {% elif auth_url %}
+    <div style="text-align:center; padding:0.5rem 0 1rem;">
+      <div style="font-size:15px; font-weight:600; margin-bottom:0.5rem; font-family:var(--serif);">Authorise {{ pending_bank }}</div>
+      <div style="font-size:13px; color:var(--muted); margin-bottom:1.5rem; line-height:1.6;">
+        Click the button below to open your bank login page.<br>
+        After approving, you will be returned here automatically.
+      </div>
+    </div>
+    <a href="{{ auth_url }}" class="btn btn-primary">Open {{ pending_bank }} login →</a>
+    <form method="POST" style="margin-top:0.75rem;">
+      <input type="hidden" name="action" value="cancel">
+      <button type="submit" class="btn btn-secondary" style="margin-top:0;">Cancel</button>
+    </form>
+  {% endif %}
+</div>
+
+{% if all_tokens and not auth_url %}
+  <div style="text-align:center;">
+    <a href="/status" class="btn btn-primary">Continue to status →</a>
+  </div>
+{% endif %}
+
+<script>
+  let allBanks = [];
+  async function loadBanks() {
+    try {
+      const resp = await fetch('/banks');
+      allBanks = await resp.json();
+      const q = document.getElementById('bank-search');
+      if (q && q.value.trim()) filterBanks(q.value);
+    } catch(e) { console.error('Failed to load banks', e); }
+  }
+  function filterBanks(query) {
+    if (!allBanks.length) loadBanks();
+    const dd = document.getElementById('bank-dropdown');
+    if (!query.trim()) { dd.style.display = 'none'; return; }
+    const q = query.toLowerCase();
+    const matches = allBanks.filter(b => b.name.toLowerCase().includes(q) || b.country.toLowerCase().includes(q)).slice(0, 200);
+    if (!matches.length) { dd.style.display = 'none'; return; }
+    dd.innerHTML = matches.map(b => `<div onclick="selectBank('${b.name.replace(/'/g, "\\'")}','${b.country}')" style="padding:9px 12px; cursor:pointer; font-size:13px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #f0efeb;" onmouseover="this.style.background='#f7f6f3'" onmouseout="this.style.background=''"><span>${b.name}</span><span style="font-size:11px; color:#9ca3af; font-family:monospace;">${b.country}</span></div>`).join('');
+    dd.style.display = 'block';
+  }
+  function showDropdown() { const q = document.getElementById('bank-search').value; if (q.trim()) filterBanks(q); }
+  function selectBank(name, country) {
+    document.getElementById('inp-bank-name').value = name;
+    document.getElementById('inp-bank-country').value = country;
+    document.getElementById('bank-search').value = '';
+    document.getElementById('bank-dropdown').style.display = 'none';
+    document.getElementById('selected-label').textContent = name + ' (' + country + ')';
+    document.getElementById('selected-bank').style.display = 'flex';
+    var btn = document.getElementById('connect-btn');
+    btn.disabled = false;
+    btn.style.background = '#37996b';
+    btn.style.opacity = '1';
+  }
+  function clearBank() {
+    document.getElementById('inp-bank-name').value = '';
+    document.getElementById('inp-bank-country').value = '';
+    document.getElementById('bank-search').value = '';
+    document.getElementById('selected-bank').style.display = 'none';
+    var btn = document.getElementById('connect-btn');
+    btn.disabled = true;
+    btn.style.background = 'var(--border)';
+    btn.style.opacity = '0.5';
+  }
+  document.addEventListener('click', function(e) {
+    const dd = document.getElementById('bank-dropdown');
+    if (dd && !dd.contains(e.target) && e.target.id !== 'bank-search') dd.style.display = 'none';
+  });
+  loadBanks();
+</script>
+{% endblock %}
