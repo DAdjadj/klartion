@@ -68,7 +68,7 @@ def send(subject: str, body: str):
 
 
 def send_success(tx_count: int, balance_lines: list = None):
-    if config.NOTIFY_ON == "errors":
+    if config.NOTIFY_ON in ("errors", "never"):
         return
     body = f"Sync completed successfully. {tx_count} transaction(s) written to Notion."
     if balance_lines:
@@ -80,6 +80,8 @@ def send_success(tx_count: int, balance_lines: list = None):
 
 
 def send_failure(error: str):
+    if config.NOTIFY_ON == "never":
+        return
     send(
         subject="Klartion: sync failed",
         body=f"Sync failed with the following error:\n\n{error}\n\nOpen Klartion at {config.KLARTION_URL} to check your configuration."

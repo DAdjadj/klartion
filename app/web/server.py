@@ -135,7 +135,7 @@ def setup_notifications():
         smtp_pass    = request.form.get("smtp_password", "").strip()
         smtp_from    = request.form.get("smtp_from", "").strip()
         smtp_host    = request.form.get("smtp_host", "").strip()
-        if not klartion_url or not email or not smtp_user or not smtp_pass:
+        if not klartion_url or (notify_on != "never" and (not email or not smtp_user or not smtp_pass)):
             error = "All fields are required."
         else:
             _cfg().set("KLARTION_URL",   klartion_url)
