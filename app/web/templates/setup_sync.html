@@ -1,80 +1,51 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Klartion - Sync</title>
-  <link rel="stylesheet" href="/static/style.css">
-  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-</head>
-<body>
-  <div class="wrap">
-    <a class="logo" href="/">
-      <div class="logo-mark">K</div>
-      <span class="logo-name">Klartion</span>
-    </a>
-    <div class="steps">
-      <div class="step done"></div>
-      <div class="step done"></div>
-      <div class="step done"></div>
-      <div class="step active"></div>
-      <div class="step"></div>
-      <div class="step"></div>
+{% extends "base.html" %}
+{% block title %}Klartion - Sync{% endblock %}
+{% block steps %}
+<div class="steps">
+  <div class="step done"></div>
+  <div class="step done"></div>
+  <div class="step done"></div>
+  <div class="step active"></div>
+  <div class="step"></div>
+  <div class="step"></div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-title">Sync</div>
+  <div class="card-sub">Step 4 of 6 — when and how often should Klartion sync?</div>
+  {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+  {% endif %}
+  <form method="POST">
+    <label for="sync_frequency" style="margin-top:0;">Sync frequency</label>
+    <select id="sync_frequency" name="sync_frequency" onchange="toggleStartTime()">
+      <option value="0" {% if sync_frequency == "0" %}selected{% endif %}>Manual only</option>
+      <option value="6" {% if sync_frequency == "6" %}selected{% endif %}>Every 6 hours</option>
+      <option value="12" {% if sync_frequency == "12" %}selected{% endif %}>Every 12 hours</option>
+      <option value="24" {% if sync_frequency == "24" or not sync_frequency %}selected{% endif %}>Every 24 hours</option>
+    </select>
+    <div id="sync-time-row">
+      <label for="sync_time">Start time <span style="font-size:11px;font-weight:400;color:var(--hint);">(24h format, e.g. 08:00)</span></label>
+      <input type="text" id="sync_time" name="sync_time" value="{{ sync_time or '08:00' }}" placeholder="08:00" pattern="[0-2][0-9]:[0-5][0-9]" maxlength="5" autocomplete="off">
     </div>
-    <div class="card">
-      <div class="card-title">Sync</div>
-      <div class="card-sub">Step 4 of 6 — when and how often should Klartion sync?</div>
-      {% if error %}
-        <div class="alert alert-error">{{ error }}</div>
-      {% endif %}
-      <form method="POST">
-        <label for="sync_frequency" style="margin-top:0;">Sync frequency</label>
-        <select id="sync_frequency" name="sync_frequency" onchange="toggleStartTime()">
-          <option value="0" {% if sync_frequency == "0" %}selected{% endif %}>Manual only</option>
-          <option value="6" {% if sync_frequency == "6" %}selected{% endif %}>Every 6 hours</option>
-          <option value="12" {% if sync_frequency == "12" %}selected{% endif %}>Every 12 hours</option>
-          <option value="24" {% if sync_frequency == "24" or not sync_frequency %}selected{% endif %}>Every 24 hours</option>
-        </select>
-        <div id="sync-time-row">
-          <label for="sync_time">Start time <span style="font-size:11px;font-weight:400;color:var(--hint);">(24h format, e.g. 08:00)</span></label>
-          <input type="text" id="sync_time" name="sync_time" value="{{ sync_time or '08:00' }}" placeholder="08:00" pattern="[0-2][0-9]:[0-5][0-9]" maxlength="5" autocomplete="off">
-        </div>
-        <button class="btn btn-primary" type="submit">Continue</button>
-      </form>
-      <script>
-      function toggleStartTime() {
-        var freq = document.getElementById('sync_frequency').value;
-        document.getElementById('sync-time-row').style.display = freq === '0' ? 'none' : '';
-      }
-      toggleStartTime();
-      </script>
-      {% if is_configured %}
-      <div style="margin-top:1.5rem; padding-top:1.25rem; border-top:1px solid var(--border);">
-        <div style="font-size:13px; font-weight:600; margin-bottom:0.35rem;">Reset sync</div>
-        <div style="font-size:11px; color:var(--hint); margin-bottom:0.75rem;">Re-import all transactions on the next sync. Useful after connecting a new bank or if transactions are missing.</div>
-        <form method="POST" action="/sync/reset" onsubmit="return confirm('This will clear the sync history and re-import all transactions on the next sync. Continue?');">
-          <button type="submit" class="btn btn-ghost" style="font-size:13px;">Reset sync →</button>
-        </form>
-      </div>
-      {% endif %}
-    </div>
-    <nav class="footer-nav">
-      <a href="/setup">License</a>
-      <a href="/setup/notion">Notion</a>
-      <a href="/setup/notifications">Notifications</a>
-      <a href="/setup/sync" class="active">Sync</a>
-      <a href="/connect">Bank</a>
-      <a href="/status">Status</a>
-    </nav>
+    <button class="btn btn-primary" type="submit">Continue</button>
+  </form>
+  <script>
+  function toggleStartTime() {
+    var freq = document.getElementById('sync_frequency').value;
+    document.getElementById('sync-time-row').style.display = freq === '0' ? 'none' : '';
+  }
+  toggleStartTime();
+  </script>
+  {% if is_configured %}
+  <div style="margin-top:1.5rem; padding-top:1.25rem; border-top:1px solid var(--border);">
+    <div style="font-size:13px; font-weight:600; margin-bottom:0.35rem;">Reset sync</div>
+    <div style="font-size:11px; color:var(--hint); margin-bottom:0.75rem;">Re-import all transactions on the next sync. Useful after connecting a new bank or if transactions are missing.</div>
+    <form method="POST" action="/sync/reset" onsubmit="return confirm('This will clear the sync history and re-import all transactions on the next sync. Continue?');">
+      <button type="submit" class="btn btn-ghost" style="font-size:13px;">Reset sync →</button>
+    </form>
   </div>
-    <footer class="app-footer" style="justify-content:space-between;">
-      <div style="display:flex;gap:1.5rem;">
-        <a href="mailto:support@david-alves.com">Support</a>
-        <a href="https://klartion.com/privacy" target="_blank">Privacy</a>
-        <a href="https://klartion.com/terms" target="_blank">Terms</a>
-        <a href="https://github.com/DAdjadj/klartion" target="_blank">GitHub</a>
-      </div>
-      <span style="color:var(--muted);font-size:12px;">v{{ app_version }}</span>
-    </footer>
-</body>
-</html>
+  {% endif %}
+</div>
+{% endblock %}

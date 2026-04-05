@@ -1,77 +1,44 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Klartion — Choose account</title>
-  <link rel="stylesheet" href="/static/style.css">
-  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-</head>
-<body>
-  <div class="wrap">
-    <a class="logo" href="/">
-      <div class="logo-mark">K</div>
-      <span class="logo-name">Klartion</span>
-    </a>
+{% extends "base.html" %}
+{% block title %}Klartion — Choose account{% endblock %}
+{% block steps %}
+<div class="steps">
+  <div class="step done"></div>
+  <div class="step done"></div>
+  <div class="step done"></div>
+  <div class="step done"></div>
+  <div class="step active"></div>
+  <div class="step"></div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-title">Choose an account</div>
+  <div class="card-sub">Your bank returned multiple accounts. Select the one you want to sync.</div>
 
-    <div class="steps">
-      <div class="step done"></div>
-      <div class="step done"></div>
-      <div class="step done"></div>
-      <div class="step done"></div>
-      <div class="step active"></div>
-      <div class="step"></div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">Choose an account</div>
-      <div class="card-sub">Your bank returned multiple accounts. Select the one you want to sync.</div>
-
-      <form method="POST" action="/pick-account">
-        <div style="display:flex; flex-direction:column; gap:0.5rem; margin:1rem 0;">
-          {% for account in accounts %}
-          <label style="display:flex; align-items:center; gap:10px; padding:12px 14px; border:1px solid var(--border); border-radius:8px; cursor:pointer; transition:border-color 0.15s;" onmouseover="this.style.borderColor='var(--muted)'" onmouseout="if(!this.querySelector('input').checked) this.style.borderColor='var(--border)'">
-            <input type="radio" name="account_uid" value="{{ account.uid or account.account_uid or account.resource_id or '' }}" {% if loop.first %}checked{% endif %} style="accent-color:var(--text); width:16px; height:16px; flex-shrink:0;">
-            <div style="min-width:0;">
-              {% if account.iban %}
-              <div style="font-family:var(--mono); font-size:13px; color:var(--text); letter-spacing:0.5px;">
-                {{ account.iban[:4] }} **** **** {{ account.iban[-4:] }}
-              </div>
-              {% endif %}
-              <div style="font-size:11px; color:var(--muted); margin-top:2px;">
-                {% if account.name %}{{ account.name }}{% endif %}
-                {% if account.currency %}<span style="margin-left:4px; padding:1px 5px; background:var(--surface); border:1px solid var(--border); border-radius:3px; font-size:10px;">{{ account.currency }}</span>{% endif %}
-                {% if account.product %}{{ account.product }}{% endif %}
-                {% if not account.iban and not account.name and not account.product %}
-                  Account {{ loop.index }} &mdash; {{ account.uid or account.account_uid or account.resource_id or 'unknown' }}
-                {% endif %}
-              </div>
-            </div>
-          </label>
-          {% endfor %}
+  <form method="POST" action="/pick-account">
+    <div style="display:flex; flex-direction:column; gap:0.5rem; margin:1rem 0;">
+      {% for account in accounts %}
+      <label style="display:flex; align-items:center; gap:10px; padding:12px 14px; border:1px solid var(--border); border-radius:8px; cursor:pointer; transition:border-color 0.15s;" onmouseover="this.style.borderColor='var(--muted)'" onmouseout="if(!this.querySelector('input').checked) this.style.borderColor='var(--border)'">
+        <input type="radio" name="account_uid" value="{{ account.uid or account.account_uid or account.resource_id or '' }}" {% if loop.first %}checked{% endif %} style="accent-color:var(--text); width:16px; height:16px; flex-shrink:0;">
+        <div style="min-width:0;">
+          {% if account.iban %}
+          <div style="font-family:var(--mono); font-size:13px; color:var(--text); letter-spacing:0.5px;">
+            {{ account.iban[:4] }} **** **** {{ account.iban[-4:] }}
+          </div>
+          {% endif %}
+          <div style="font-size:11px; color:var(--muted); margin-top:2px;">
+            {% if account.name %}{{ account.name }}{% endif %}
+            {% if account.currency %}<span style="margin-left:4px; padding:1px 5px; background:var(--surface); border:1px solid var(--border); border-radius:3px; font-size:10px;">{{ account.currency }}</span>{% endif %}
+            {% if account.product %}{{ account.product }}{% endif %}
+            {% if not account.iban and not account.name and not account.product %}
+              Account {{ loop.index }} &mdash; {{ account.uid or account.account_uid or account.resource_id or 'unknown' }}
+            {% endif %}
+          </div>
         </div>
-        <button class="btn btn-primary" type="submit">Connect this account</button>
-      </form>
+      </label>
+      {% endfor %}
     </div>
-
-    <nav class="footer-nav">
-      <a href="/setup">License</a>
-      <a href="/setup/notion">Notion</a>
-      <a href="/setup/notifications">Notifications</a>
-      <a href="/setup/sync">Sync</a>
-      <a href="/connect" class="active">Bank</a>
-      <a href="/status">Status</a>
-    </nav>
-  </div>
-
-  <footer class="app-footer" style="justify-content:space-between;">
-    <div style="display:flex;gap:1.5rem;">
-      <a href="mailto:support@david-alves.com">Support</a>
-      <a href="https://klartion.com/privacy" target="_blank">Privacy</a>
-      <a href="https://klartion.com/terms" target="_blank">Terms</a>
-      <a href="https://github.com/DAdjadj/klartion" target="_blank">GitHub</a>
-    </div>
-    <span style="color:var(--muted);font-size:12px;">v{{ app_version }}</span>
-  </footer>
-</body>
-</html>
+    <button class="btn btn-primary" type="submit">Connect this account</button>
+  </form>
+</div>
+{% endblock %}

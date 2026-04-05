@@ -60,6 +60,7 @@ def setup_licence():
     return render_template("setup_licence.html",
         error=error,
         licence_key=_cfg().LICENCE_KEY,
+        active="license",
     )
 
 
@@ -122,6 +123,7 @@ def setup_notion():
         notion_api_key=_cfg().NOTION_API_KEY,
         notion_database_id=_cfg().NOTION_DATABASE_ID,
         is_configured=_is_configured(),
+        active="notion",
     )
 
 @app.route("/setup/notifications", methods=["GET", "POST"])
@@ -155,6 +157,7 @@ def setup_notifications():
         smtp_password=_cfg().SMTP_PASSWORD,
         smtp_from=_cfg().SMTP_FROM,
         smtp_host=_cfg().SMTP_HOST if _cfg().SMTP_HOST != "smtp.mail.me.com" else "",
+        active="notifications",
     )
 
 @app.route("/email/test", methods=["POST"])
@@ -242,6 +245,7 @@ def setup_sync():
         sync_time=_cfg().SYNC_TIME or "08:00",
         sync_frequency=_cfg().SYNC_FREQUENCY if hasattr(_cfg(), 'SYNC_FREQUENCY') else "24",
         is_configured=_is_configured(),
+        active="sync",
     )
 
 @app.route("/settings/deactivate", methods=["POST"])
@@ -390,6 +394,7 @@ def connect():
         bank_account_limit=bank_account_limit,
         bank_slot_url=f"https://buy.stripe.com/4gM9AMg348nt2Y7185cMM04?client_reference_id={_cfg().LICENCE_KEY}",
         today=date.today().isoformat(),
+        active="bank",
     )
 
 @app.route("/connect/reauthorise", methods=["POST"])
@@ -414,6 +419,7 @@ def reauthorise():
         tokens=db.get_tokens(),
         pending_bank=bank_name,
         sync_time=_cfg().SYNC_TIME,
+        active="bank",
     )
 
 def _finalize_bank_connection(result, account_uid):
@@ -485,7 +491,7 @@ def pick_account():
     if not accounts_json:
         return redirect(url_for("connect"))
     accounts = json.loads(accounts_json)
-    return render_template("pick_account.html", accounts=accounts)
+    return render_template("pick_account.html", accounts=accounts, active="pick-account")
 
 @app.route("/pick-account", methods=["POST"])
 def pick_account_post():
@@ -626,6 +632,7 @@ def status():
         streak=streak,
         fun_message=fun_message,
         show_review_prompt=show_review_prompt,
+        active="status",
     )
 
 _sync_running = False
