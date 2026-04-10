@@ -308,6 +308,19 @@ def api_version():
 def last_sync_api():
     return jsonify({"ran_at": db.get_last_sync() or ""})
 
+@app.route("/api/timezone", methods=["POST"])
+def api_timezone():
+    from zoneinfo import available_timezones
+    data = request.get_json(silent=True) or {}
+    tz = data.get("tz", "")
+    if not tz or tz not in available_timezones():
+        return jsonify({"ok": False}), 400
+    if tz != _cfg().TIMEZONE:
+        _cfg().set("TIMEZONE", tz)
+        from .. import scheduler
+        scheduler.start()
+    return jsonify({"ok": True})
+
 @app.route("/api/bank-status")
 def bank_status():
     return jsonify({"connected": db.get_tokens() is not None})
@@ -662,6 +675,7 @@ def status():
         sync_time=_cfg().SYNC_TIME,
         sync_frequency=_cfg().SYNC_FREQUENCY or "24",
         sync_times=_get_sync_times(),
+        timezone=_cfg().TIMEZONE or "",
         notify_email=_cfg().NOTIFY_EMAIL,
         activation_usage=activation_usage,
         activation_limit=activation_limit,
