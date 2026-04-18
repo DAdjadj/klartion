@@ -18,6 +18,9 @@
   {% if error %}
     <div class="alert alert-error">{{ error }}</div>
   {% endif %}
+  {% if bank_seat_error %}
+    <div class="alert alert-error">{{ bank_seat_error }}</div>
+  {% endif %}
   {% if success %}
     <div class="alert alert-success">
       Bank connected. Your first sync runs at {{ sync_time }} — or trigger it manually from the status page.
@@ -52,7 +55,7 @@
     </div>
 
     {% if all_tokens %}
-    <div style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.8px; color:var(--muted); margin-bottom:0.5rem;">Connected accounts ({{ all_tokens|length }}/{{ bank_account_limit }})</div>
+    <div style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.8px; color:var(--muted); margin-bottom:0.5rem;">Connected accounts ({{ bank_seat_usage }}/{{ bank_account_limit }} across all machines)</div>
     <div style="font-size:11px;color:var(--hint);margin-bottom:0.75rem;">Reset sync re-imports transactions from the start date. Existing transactions won't be duplicated.</div>
     {% for t in all_tokens %}
     <div style="margin-bottom:0.75rem; padding:12px 14px; border:1px solid var(--border); border-radius:8px;">
@@ -101,9 +104,9 @@
     <hr style="border:none; border-top:1px solid var(--border); margin:1.25rem 0;">
     {% endif %}
 
-    {% if all_tokens|length >= bank_account_limit %}
+    {% if bank_seat_usage >= bank_account_limit %}
     <div style="padding:14px; background:var(--surface); border:1px solid var(--border); border-radius:8px; font-size:13px; color:var(--muted); text-align:center;">
-      Bank account limit reached. <a href="{{ bank_slot_url }}" target="_blank" style="color:var(--text); font-weight:600;">Add 1 more →</a>
+      Bank account limit reached ({{ bank_seat_usage }}/{{ bank_account_limit }} across all machines). <a href="{{ bank_slot_url }}" target="_blank" style="color:var(--text); font-weight:600;">Add 1 more →</a>
     </div>
     {% else %}
 

@@ -38,6 +38,45 @@ def _get_bank_account_limit():
     except Exception:
         return 2
 
+def _sync_bank_seats(tokens):
+    if not _cfg().LICENCE_KEY:
+        db.set_setting("license_bank_limit_error", "")
+        return {"ok": True, "used": 0, "limit": _get_bank_account_limit()}
+    result = licence.sync_bank_seats(tokens)
+    if result.get("ok"):
+        db.set_setting("license_bank_limit_error", "")
+    elif not result.get("network"):
+        db.set_setting("license_bank_limit_error", result.get("error", ""))
+    return result
+
+def _get_bank_seat_error(tokens=None):
+    tokens = tokens if tokens is not None else db.get_all_tokens()
+    result = _sync_bank_seats(tokens)
+    if result.get("ok") or result.get("network"):
+        return None, result
+    return result.get("error"), result
+
+def _ensure_global_bank_capacity(tokens, new_seats=1):
+    result = _sync_bank_seats(tokens)
+    if not result.get("ok"):
+        if result.get("network"):
+            return "Could not confirm your global bank slot availability right now. Please try again in a moment."
+        return result.get("error") or "Bank account limit reached for this licence."
+    used = int(result.get("used") or 0)
+    limit = int(result.get("limit") or _get_bank_account_limit())
+    if used + new_seats > limit:
+        return f"Bank account limit reached ({limit}). Disconnect a bank on another machine or add another bank slot before connecting a new one."
+    return None
+
+def _claim_bank_seat(token):
+    result = licence.claim_bank_seat(token)
+    if result.get("ok"):
+        db.set_setting("license_bank_limit_error", "")
+        return None
+    if result.get("network"):
+        return "Could not confirm your global bank slot availability right now. Please try again in a moment."
+    return result.get("error") or "Bank account limit reached for this licence."
+
 @app.route("/")
 def index():
     if not _is_configured():
@@ -358,9 +397,9 @@ def connect():
             start_sync_date = request.form.get("start_sync_date", "").strip()
             if not bank_name or not bank_country:
                 error = "Please select a bank."
-            elif len(db.get_all_tokens()) >= _get_bank_account_limit():
-                error = "Bank account limit reached. Disconnect a bank or add another slot before connecting a new one."
             else:
+                error = _ensure_global_bank_capacity(db.get_all_tokens(), new_seats=1)
+            if not error:
                 try:
                     if start_sync_date:
                         db.set_setting("pending_start_sync_date", start_sync_date)
@@ -380,9 +419,9 @@ def connect():
             provider_name = request.form.get("provider_name", "").strip()
             if not provider_name:
                 error = "Please select a provider."
-            elif db.get_token_count() >= _get_bank_account_limit():
-                error = "Bank account limit reached. Disconnect an account or add another slot before connecting a new one."
             else:
+                error = _ensure_global_bank_capacity(db.get_all_tokens(), new_seats=1)
+            if not error:
                 from ..providers import get_provider, PROVIDERS
                 if provider_name not in PROVIDERS:
                     error = f"Unknown provider: {provider_name}"
@@ -407,15 +446,21 @@ def connect():
                 if not error:
                     from .. import crypto
                     encrypted = crypto.encrypt_credentials(credentials)
-                    db.save_provider_token(
+                    token_id = db.save_provider_token(
                         bank_name=provider.display_name,
                         provider=provider_name,
                         provider_credentials=encrypted,
                     )
-                    _start_scheduler_if_ready()
-                    import threading
-                    threading.Thread(target=sync.run, daemon=True).start()
-                    return redirect(url_for("connect", success=1))
+                    token = db.get_token_by_id(token_id)
+                    seat_error = _claim_bank_seat(token)
+                    if seat_error:
+                        db.clear_token_by_id(token_id)
+                        error = seat_error
+                    else:
+                        _start_scheduler_if_ready()
+                        import threading
+                        threading.Thread(target=sync.run, daemon=True).start()
+                        return redirect(url_for("connect", success=1))
 
         elif action == "cancel":
             db.set_setting("pending_session_id", "")
@@ -428,11 +473,13 @@ def connect():
     import glob
     all_tokens = db.get_all_tokens()
     tokens     = db.get_tokens()  # for backwards compat
+    bank_seat_error, bank_seat_result = _get_bank_seat_error(all_tokens)
     success    = request.args.get("success")
     pem_ready  = bool(glob.glob("/app/data/*.pem"))
 
     # Fetch bank account limit from licence API
-    bank_account_limit = _get_bank_account_limit()
+    bank_account_limit = int((bank_seat_result or {}).get("limit") or _get_bank_account_limit())
+    bank_seat_usage = int((bank_seat_result or {}).get("used") or len(all_tokens))
 
     from ..providers import get_all_providers
     balance_providers = get_all_providers()
@@ -441,6 +488,7 @@ def connect():
     return render_template("connect.html",
         error=error,
         success=success,
+        bank_seat_error=bank_seat_error,
         auth_url=auth_url,
         tokens=tokens,
         all_tokens=all_tokens,
@@ -449,6 +497,7 @@ def connect():
         pem_ready=pem_ready,
         eb_app_id=_cfg().EB_APP_ID,
         bank_account_limit=bank_account_limit,
+        bank_seat_usage=bank_seat_usage,
         bank_slot_url=f"https://buy.stripe.com/4gM9AMg348nt2Y7185cMM04?client_reference_id={_cfg().LICENCE_KEY}",
         today=date.today().isoformat(),
         balance_providers=balance_providers,
@@ -470,13 +519,22 @@ def reauthorise():
     except Exception as e:
         logger.error("Failed to start reauth: %s", e)
         return redirect(url_for("connect") + f"?error=Could not start re-authorisation: {e}")
+    all_tokens = db.get_all_tokens()
+    bank_seat_error, bank_seat_result = _get_bank_seat_error(all_tokens)
+    bank_account_limit = int((bank_seat_result or {}).get("limit") or _get_bank_account_limit())
+    bank_seat_usage = int((bank_seat_result or {}).get("used") or len(all_tokens))
     return render_template("connect.html",
         error=None,
         success=None,
         auth_url=auth_url,
         tokens=db.get_tokens(),
+        all_tokens=all_tokens,
+        bank_seat_error=bank_seat_error,
         pending_bank=bank_name,
         sync_time=_cfg().SYNC_TIME,
+        bank_account_limit=bank_account_limit,
+        bank_seat_usage=bank_seat_usage,
+        bank_slot_url=f"https://buy.stripe.com/4gM9AMg348nt2Y7185cMM04?client_reference_id={_cfg().LICENCE_KEY}",
         active="bank",
     )
 
@@ -484,19 +542,21 @@ def _finalize_bank_connection(result, account_uid):
     """Save bank tokens, clear pending settings, start scheduler and sync."""
     reauth_token_id = (db.get_setting("pending_reauth_token_id") or "").strip()
     if reauth_token_id:
+        token_id = int(reauth_token_id)
         db.save_tokens(
             session_id=result["session_id"],
             access_token=account_uid,
             bank_name=result["bank_name"],
             bank_country=result["bank_country"],
             expires_at=result.get("valid_until", ""),
-            token_id=int(reauth_token_id),
+            token_id=token_id,
         )
     else:
         start_sync_date = db.get_setting("pending_start_sync_date") or ""
-        if len(db.get_all_tokens()) >= _get_bank_account_limit():
-            raise ValueError("Bank account limit reached. Disconnect a bank or add another slot before connecting a new one.")
-        db.save_tokens(
+        capacity_error = _ensure_global_bank_capacity(db.get_all_tokens(), new_seats=1)
+        if capacity_error:
+            raise ValueError(capacity_error)
+        token_id = db.save_tokens(
             session_id=result["session_id"],
             access_token=account_uid,
             bank_name=result["bank_name"],
@@ -504,6 +564,12 @@ def _finalize_bank_connection(result, account_uid):
             expires_at=result.get("valid_until", ""),
             start_sync_date=start_sync_date,
         )
+    token = db.get_token_by_id(token_id)
+    seat_error = _claim_bank_seat(token)
+    if seat_error:
+        if not reauth_token_id:
+            db.clear_token_by_id(token_id)
+        raise ValueError(seat_error)
     db.set_setting("pending_session_id", "")
     db.set_setting("pending_bank_name", "")
     db.set_setting("pending_bank_country", "")
@@ -591,6 +657,7 @@ def status():
 
     tokens     = db.get_tokens()
     all_tokens = db.get_all_tokens()
+    bank_seat_error, bank_seat_result = _get_bank_seat_error(all_tokens)
     page       = request.args.get("page", 1, type=int)
     log_data   = db.get_sync_log_page(page=page, per_page=5)
     syncs      = log_data["syncs"]
@@ -679,10 +746,13 @@ def status():
         notify_email=_cfg().NOTIFY_EMAIL,
         activation_usage=activation_usage,
         activation_limit=activation_limit,
+        bank_seat_usage=(bank_seat_result or {}).get("used", act_info.get("bank_seat_usage", 0)),
+        bank_account_limit=(bank_seat_result or {}).get("limit", act_info.get("bank_account_limit", 2)),
         is_trial=act_info.get("is_trial", False),
         trial_expires_at=act_info.get("expires_at", "")[:10] if act_info.get("expires_at") else None,
         licence_sync_failed=licence_sync_failed,
         licence_limit_reached=(licence_sync_failed and activation_usage >= activation_limit and activation_limit > 0),
+        bank_seat_error=bank_seat_error,
         page=log_data["page"],
         total_pages=log_data["total_pages"],
         update_mode=db.get_setting("update_mode"),
@@ -743,6 +813,9 @@ def disconnect():
         db.clear_token_by_id(int(token_id))
     else:
         db.clear_tokens()
+    result = _sync_bank_seats(db.get_all_tokens())
+    if not result.get("ok") and not result.get("network"):
+        logger.warning("Failed to release Klartion bank seat: %s", result.get("error"))
     return redirect(url_for("connect"))
 
 @app.route("/reset-sync", methods=["POST"])

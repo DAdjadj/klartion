@@ -2,6 +2,7 @@ import sqlite3
 import json
 from datetime import datetime
 from . import config
+import uuid
 
 def get_conn():
     conn = sqlite3.connect(config.DB_PATH)
@@ -20,6 +21,7 @@ def init():
             bank_name   TEXT,
             bank_country TEXT,
             expires_at  TEXT,
+            license_seat_id TEXT,
             created_at  TEXT DEFAULT (datetime('now'))
         );
 
@@ -81,6 +83,13 @@ def init():
         conn.execute("ALTER TABLE tokens ADD COLUMN sync_mode TEXT NOT NULL DEFAULT 'transactions'")
     except sqlite3.OperationalError:
         pass
+    try:
+        conn.execute("ALTER TABLE tokens ADD COLUMN license_seat_id TEXT")
+    except sqlite3.OperationalError:
+        pass
+    rows = conn.execute("SELECT id FROM tokens WHERE license_seat_id IS NULL OR license_seat_id = ''").fetchall()
+    for row in rows:
+        conn.execute("UPDATE tokens SET license_seat_id = ? WHERE id = ?", (str(uuid.uuid4()), row["id"]))
     conn.commit()
     conn.close()
 
@@ -93,13 +102,16 @@ def save_tokens(session_id, access_token, bank_name, bank_country, expires_at, u
                 start_sync_date = CASE WHEN ? <> '' THEN ? ELSE start_sync_date END
             WHERE id = ?
         """, (access_token, session_id, bank_name, bank_country, expires_at, start_sync_date, start_sync_date, token_id))
+        saved_id = token_id
     else:
-        conn.execute("""
-            INSERT INTO tokens (user_id, access_token, session_id, bank_name, bank_country, expires_at, start_sync_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (user_id, access_token, session_id, bank_name, bank_country, expires_at, start_sync_date))
+        cur = conn.execute("""
+            INSERT INTO tokens (user_id, access_token, session_id, bank_name, bank_country, expires_at, start_sync_date, license_seat_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (user_id, access_token, session_id, bank_name, bank_country, expires_at, start_sync_date, str(uuid.uuid4())))
+        saved_id = cur.lastrowid
     conn.commit()
     conn.close()
+    return saved_id
 
 def get_tokens(user_id="default"):
     conn = get_conn()
@@ -116,6 +128,15 @@ def get_all_tokens(user_id="default"):
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+def get_token_by_id(token_id):
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT * FROM tokens WHERE id = ?",
+        (token_id,)
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
 
 def clear_tokens(user_id="default"):
     conn = get_conn()
@@ -174,12 +195,13 @@ def get_pending_transactions(user_id="default", tx_id_prefix=None):
 def save_provider_token(bank_name, provider, provider_credentials, user_id="default"):
     """Save a balance provider token (no session/access_token needed)."""
     conn = get_conn()
-    conn.execute("""
-        INSERT INTO tokens (user_id, bank_name, bank_country, provider, provider_credentials, sync_mode)
-        VALUES (?, ?, '', ?, ?, 'balance')
-    """, (user_id, bank_name, provider, provider_credentials))
+    cur = conn.execute("""
+        INSERT INTO tokens (user_id, bank_name, bank_country, provider, provider_credentials, sync_mode, license_seat_id)
+        VALUES (?, ?, '', ?, ?, 'balance', ?)
+    """, (user_id, bank_name, provider, provider_credentials, str(uuid.uuid4())))
     conn.commit()
     conn.close()
+    return cur.lastrowid
 
 
 def get_token_count(user_id="default"):
@@ -190,7 +212,7 @@ def get_token_count(user_id="default"):
 
 
 def update_token_fields(token_id, **fields):
-    allowed = {"access_token", "session_id", "bank_name", "bank_country", "expires_at", "start_sync_date", "last_sync_at", "last_balance", "last_balance_currency", "provider_credentials"}
+    allowed = {"access_token", "session_id", "bank_name", "bank_country", "expires_at", "start_sync_date", "last_sync_at", "last_balance", "last_balance_currency", "provider_credentials", "license_seat_id"}
     updates = {key: value for key, value in fields.items() if key in allowed}
     if not updates:
         return
