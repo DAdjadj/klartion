@@ -1,6 +1,5 @@
 import requests
 import hashlib
-import socket
 import subprocess
 import platform
 import logging
@@ -10,6 +9,14 @@ from . import config, db
 logger = logging.getLogger(__name__)
 
 LICENCE_BASE = "https://api.klartion.com"
+
+def _post_json(path, payload, timeout=10):
+    resp = requests.post(LICENCE_BASE + path, json=payload, timeout=timeout)
+    try:
+        data = resp.json()
+    except ValueError:
+        data = {}
+    return resp, data
 
 def _get_hw_uuid():
     system = platform.system()
@@ -66,15 +73,16 @@ def _get_fingerprint():
     db.set_setting("machine_fingerprint_v2", fp)
     return fp
 
+def get_machine_fingerprint():
+    return _get_fingerprint()
+
 def activate(key):
     fp = _get_fingerprint()
     try:
-        resp = requests.post(
-            LICENCE_BASE + "/activate",
-            json={"license_key": key, "machine_fingerprint": fp, "instance_name": "klartion"},
-            timeout=10,
+        resp, data = _post_json(
+            "/activate",
+            {"license_key": key, "machine_fingerprint": fp, "instance_name": "klartion"},
         )
-        data = resp.json()
         if resp.status_code in (200, 201) and data.get("valid"):
             db.set_setting("licence_key", key)
             return {"valid": True, "error": None}
@@ -96,12 +104,10 @@ def deactivate():
     if not key:
         return {"success": False, "error": "No active licence to deactivate."}
     try:
-        resp = requests.post(
-            LICENCE_BASE + "/deactivate",
-            json={"license_key": key, "machine_fingerprint": fp},
-            timeout=10,
+        resp, data = _post_json(
+            "/deactivate",
+            {"license_key": key, "machine_fingerprint": fp},
         )
-        data = resp.json()
         if resp.status_code == 200:
             db.set_setting("licence_key", "")
             db.set_setting("machine_fingerprint", "")
@@ -119,12 +125,10 @@ def validate(key=None):
         return {"valid": False, "error": "No licence key configured."}
     fp = _get_fingerprint()
     try:
-        resp = requests.post(
-            LICENCE_BASE + "/validate",
-            json={"license_key": key, "machine_fingerprint": fp},
-            timeout=10,
+        resp, data = _post_json(
+            "/validate",
+            {"license_key": key, "machine_fingerprint": fp},
         )
-        data = resp.json()
         if resp.status_code == 200 and data.get("valid"):
             return {"valid": True, "error": None}
         else:
@@ -143,22 +147,77 @@ def validate(key=None):
 def get_activation_info():
     key = config.LICENCE_KEY
     if not key:
-        return {"usage": 0, "limit": 2, "bank_account_limit": 2, "is_trial": False, "expires_at": None}
+        return {"usage": 0, "limit": 2, "bank_account_limit": 2, "bank_seat_usage": 0, "is_trial": False, "expires_at": None}
     try:
-        resp = requests.post(
-            LICENCE_BASE + "/info",
-            json={"license_key": key},
-            timeout=5,
-        )
+        resp, d = _post_json("/info", {"license_key": key}, timeout=5)
         if resp.status_code == 200:
-            d = resp.json()
             return {
                 "usage": d.get("activation_usage", 0),
                 "limit": d.get("activation_limit", 2),
                 "bank_account_limit": d.get("bank_account_limit", 2),
+                "bank_seat_usage": d.get("bank_seat_usage", 0),
                 "is_trial": d.get("is_trial", False),
                 "expires_at": d.get("expires_at"),
             }
     except Exception:
         pass
-    return {"usage": 0, "limit": 2, "bank_account_limit": 2, "is_trial": False, "expires_at": None}
+    return {"usage": 0, "limit": 2, "bank_account_limit": 2, "bank_seat_usage": 0, "is_trial": False, "expires_at": None}
+
+def claim_bank_seat(token, key=None):
+    key = key or config.LICENCE_KEY
+    if not key:
+        return {"ok": False, "error": "No licence key configured."}
+    seat_id = (token.get("license_seat_id") or "").strip()
+    if not seat_id:
+        return {"ok": False, "error": "Missing local bank seat ID."}
+    try:
+        resp, data = _post_json("/bank-seats/claim", {
+            "license_key": key,
+            "machine_fingerprint": _get_fingerprint(),
+            "seat_id": seat_id,
+            "bank_name": token.get("bank_name", ""),
+            "actual_account": token.get("bank_name", ""),
+            "sync_mode": token.get("sync_mode", "transactions"),
+        })
+        if resp.status_code == 200:
+            return {"ok": True, "used": data.get("used"), "limit": data.get("limit")}
+        return {
+            "ok": False,
+            "error": data.get("error") or "Could not reserve a bank slot for this licence.",
+            "used": data.get("used"),
+            "limit": data.get("limit"),
+        }
+    except requests.RequestException as e:
+        logger.warning("Bank seat claim failed (network): %s", e)
+        return {"ok": False, "error": "Could not reach the licence server to confirm bank slot availability.", "network": True}
+
+def sync_bank_seats(tokens, key=None):
+    key = key or config.LICENCE_KEY
+    if not key:
+        return {"ok": False, "error": "No licence key configured."}
+    try:
+        resp, data = _post_json("/bank-seats/sync", {
+            "license_key": key,
+            "machine_fingerprint": _get_fingerprint(),
+            "seats": [
+                {
+                    "seat_id": token.get("license_seat_id", ""),
+                    "bank_name": token.get("bank_name", ""),
+                    "actual_account": token.get("bank_name", ""),
+                    "sync_mode": token.get("sync_mode", "transactions"),
+                }
+                for token in tokens
+                if token.get("license_seat_id")
+            ],
+        })
+        if resp.status_code == 200:
+            return {"ok": True, "used": data.get("used"), "limit": data.get("limit")}
+        return {
+            "ok": False,
+            "error": data.get("error") or "Could not verify bank slots for this licence.",
+            "used": data.get("used"),
+            "limit": data.get("limit"),
+        }
+    except requests.RequestException as e:
+        logger.warning("Bank seat sync failed (network): %s", e)
+        return {"ok": False, "error": "Could not reach the licence server to verify connected bank slots.", "network": True}

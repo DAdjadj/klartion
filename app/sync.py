@@ -35,6 +35,20 @@ def run():
         email_notify.send_failure(msg)
         return False, 0, msg
 
+    seat_result = licence.sync_bank_seats(all_tokens)
+    if not seat_result.get("ok"):
+        if seat_result.get("network"):
+            logger.warning("Bank seat verification skipped: %s", seat_result.get("error"))
+        else:
+            msg = seat_result.get("error") or "Bank account limit reached for this licence."
+            logger.error(msg)
+            db.set_setting("license_bank_limit_error", msg)
+            db.log_sync("failure", message=msg)
+            email_notify.send_failure(msg)
+            return False, 0, msg
+    else:
+        db.set_setting("license_bank_limit_error", "")
+
     # 2b. Ensure Balance property exists on Notion database
     notion.ensure_balance_property()
 
