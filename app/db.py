@@ -87,6 +87,10 @@ def init():
         conn.execute("ALTER TABLE tokens ADD COLUMN license_seat_id TEXT")
     except sqlite3.OperationalError:
         pass
+    try:
+        conn.execute("ALTER TABLE tokens ADD COLUMN skip_pending INTEGER NOT NULL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
     rows = conn.execute("SELECT id FROM tokens WHERE license_seat_id IS NULL OR license_seat_id = ''").fetchall()
     for row in rows:
         conn.execute("UPDATE tokens SET license_seat_id = ? WHERE id = ?", (str(uuid.uuid4()), row["id"]))
@@ -212,7 +216,7 @@ def get_token_count(user_id="default"):
 
 
 def update_token_fields(token_id, **fields):
-    allowed = {"access_token", "session_id", "bank_name", "bank_country", "expires_at", "start_sync_date", "last_sync_at", "last_balance", "last_balance_currency", "provider_credentials", "license_seat_id"}
+    allowed = {"access_token", "session_id", "bank_name", "bank_country", "expires_at", "start_sync_date", "last_sync_at", "last_balance", "last_balance_currency", "provider_credentials", "license_seat_id", "skip_pending"}
     updates = {key: value for key, value in fields.items() if key in allowed}
     if not updates:
         return
