@@ -91,5 +91,5 @@ def send_failure(error: str):
 def send_token_expiry_warning(bank_name: str, days_left: int):
     send(
         subject=f"Klartion: your {bank_name} connection expires in {days_left} days",
-        body=f"Your Enable Banking connection to {bank_name} will expire in {days_left} days.\n\nOpen Klartion at {config.KLARTION_URL} and go to the Status page to re-authorise."
+        body=f"Your bank connection to {bank_name} will expire in {days_left} days.\n\nOpen Klartion at {config.KLARTION_URL} and go to the Status page to re-authorise."
     )
