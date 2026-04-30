@@ -142,12 +142,23 @@ def get_transactions(session_id: str, account_uid: str, date_from: str, date_to:
     """
     Fetch booked transactions for an account by UID.
     Uses pagination via continuation_key if present.
+    Retries with exponential backoff on 429 rate-limit responses.
     """
     all_txns = []
     params = {"date_from": date_from, "date_to": date_to}
     url = f"{EB_BASE}/accounts/{account_uid}/transactions"
+    page = 0
     while url:
-        resp = requests.get(url, headers=_headers(), params=params, timeout=30)
+        if page > 0:
+            time.sleep(1)
+        for attempt in range(4):
+            resp = requests.get(url, headers=_headers(), params=params, timeout=30)
+            if resp.status_code == 429:
+                wait = min(2 ** attempt * 5, 60)
+                logger.warning("Rate limited (429), retrying in %ds (attempt %d/4)", wait, attempt + 1)
+                time.sleep(wait)
+                continue
+            break
         resp.raise_for_status()
         data = resp.json()
         all_txns.extend(data.get("transactions", []))
@@ -157,6 +168,7 @@ def get_transactions(session_id: str, account_uid: str, date_from: str, date_to:
             params = {"continuation_key": ck}
         else:
             url = None
+        page += 1
     return [t for t in all_txns if t.get("status") in ("BOOK", "booked", "PDNG", "pending")]
 
 def get_balances(session_id: str, account_uid: str) -> list:

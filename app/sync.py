@@ -1,4 +1,5 @@
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from . import config, db, enablebanking, notion, email_notify, licence, crypto
 
@@ -65,7 +66,9 @@ def run():
     errors = []
     balance_lines = []
 
-    for tokens in all_tokens:
+    for i, tokens in enumerate(all_tokens):
+        if i > 0:
+            time.sleep(2)
         # Handle balance-only providers separately
         if tokens.get("sync_mode") == "balance":
             success, count, label = _sync_balance_token(tokens)
@@ -125,6 +128,11 @@ def run():
         tx_prefix = f"{account_uid}:"
         known_ids = db.get_known_tx_ids(tx_id_prefix=tx_prefix)
         new_transactions = [t for t in all_transactions if _scoped_tx_id(account_uid, t) not in known_ids]
+        if tokens.get("skip_pending"):
+            before = len(new_transactions)
+            new_transactions = [t for t in new_transactions if _is_booked_status(t.get("status"))]
+            if before != len(new_transactions):
+                logger.info("Skipped %d pending transactions (skip_pending enabled)", before - len(new_transactions))
         logger.info("%d new transactions after deduplication", len(new_transactions))
 
         # 7. Reconcile pending

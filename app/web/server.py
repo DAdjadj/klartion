@@ -830,6 +830,15 @@ def reset_sync():
         logger.info("Reset sync state for token %s (start_date=%s)", token_id, reset_date)
     return redirect(url_for("connect"))
 
+@app.route("/toggle-skip-pending", methods=["POST"])
+def toggle_skip_pending():
+    token_id = request.form.get("token_id")
+    if token_id:
+        skip = 1 if request.form.get("skip_pending") == "1" else 0
+        db.update_token_fields(int(token_id), skip_pending=skip)
+        logger.info("Set skip_pending=%s for token %s", skip, token_id)
+    return redirect(url_for("connect"))
+
 # ---------------------------------------------------------------------------
 # Review
 # ---------------------------------------------------------------------------
