@@ -39,6 +39,13 @@
   <div class="alert alert-warn">A bank connection expires in {{ days_left }} day{{ 's' if days_left != 1 else '' }}. <a href="/connect" style="color:inherit; font-weight:600;">Manage banks &rarr;</a></div>
 {% endif %}
 
+{% if simplefin_subscription_lapsed %}
+  <div class="alert alert-error">Your SimpleFIN Bridge subscription has lapsed. <a href="https://bridge.simplefin.org" target="_blank" style="color:inherit; font-weight:600;">Renew at bridge.simplefin.org</a> to resume syncing.</div>
+{% endif %}
+{% if simplefin_access_revoked_token_ids %}
+  <div class="alert alert-error">SimpleFIN access was revoked for {{ simplefin_access_revoked_token_ids|length }} account{{ '' if simplefin_access_revoked_token_ids|length == 1 else 's' }}. <a href="/connect" style="color:inherit; font-weight:600;">Regenerate a setup token and reconnect &rarr;</a></div>
+{% endif %}
+
 {% if show_review_prompt %}
 <div class="card" style="border-color:#37996b; border-width:1px;">
   <div class="card-title" style="margin-bottom:0.25rem;">How's Klartion working for you?</div>
@@ -102,7 +109,9 @@
           <div class="card-title" style="margin-bottom:0.25rem;">Status</div>
           <div class="card-sub" style="margin-bottom:0;">{{ fun_message }}</div>
         </div>
-        <button class="btn btn-ghost" id="sync-btn" onclick="runSync()">Sync now</button>
+        {% if has_enablebanking or not has_simplefin %}
+        <button class="btn btn-ghost" id="sync-btn" onclick="runSync()" {% if has_simplefin %}title="SimpleFIN accounts only sync once per day. Manual sync still uses one of your daily SimpleFIN API calls."{% endif %}>Sync now</button>
+        {% endif %}
       </div>
       <div class="stat-row">
         <span class="stat-label">Last sync</span>
@@ -185,6 +194,9 @@
           <button class="btn btn-ghost" type="submit" style="font-size:12px;">Save</button>
         </div>
         <div style="font-size:12px;color:var(--muted);margin-top:8px;" id="sync-times-preview">{% if sync_frequency != "0" %}Syncs at {{ sync_times }}{% if timezone %} ({{ timezone }}){% endif %}{% endif %}</div>
+        {% if has_simplefin %}
+        <div style="font-size:11px;color:var(--hint);margin-top:6px;line-height:1.5;">SimpleFIN accounts always sync at most once per day, regardless of this setting (24-call/day API limit).</div>
+        {% endif %}
       </form>
       <script>
       function updateSyncPreview() {

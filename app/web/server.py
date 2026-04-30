@@ -279,11 +279,13 @@ def setup_sync():
         _cfg().set("SYNC_FREQUENCY", sync_frequency)
         _start_scheduler_if_ready()
         return redirect(url_for("connect"))
+    has_simplefin = any(t.get("provider") == "simplefin" for t in db.get_all_tokens())
     return render_template("setup_sync.html",
         error=error,
         sync_time=_cfg().SYNC_TIME or "08:00",
         sync_frequency=_cfg().SYNC_FREQUENCY if hasattr(_cfg(), 'SYNC_FREQUENCY') else "24",
         is_configured=_is_configured(),
+        has_simplefin=has_simplefin,
         active="sync",
     )
 
@@ -492,6 +494,23 @@ def connect():
     balance_providers = get_all_providers()
 
     from datetime import date
+    has_simplefin = any(t.get("provider") == "simplefin" for t in all_tokens)
+    has_enablebanking = any(
+        t.get("provider") not in ("simplefin",) and t.get("sync_mode") != "balance"
+        for t in all_tokens
+    )
+    sf_lapsed = db.get_setting("simplefin_subscription_lapsed") == "1"
+    sf_revoked_setting = (db.get_setting("simplefin_access_revoked") or "").strip()
+    # Set, not string — multiple tokens can be revoked at once when an
+    # access URL is shared across sibling accounts.
+    sf_revoked_token_ids = {x for x in sf_revoked_setting.split(",") if x}
+    # Resume state: claim succeeded, access URL is saved, but the
+    # account-list step never completed. Setup tokens are one-shot, so
+    # without a resume CTA the user is stuck.
+    sf_pending_resume = bool(
+        db.get_setting("pending_simplefin_access_url")
+        and not db.get_setting("pending_simplefin_accounts")
+    )
     return render_template("connect.html",
         error=error,
         success=success,
@@ -508,6 +527,11 @@ def connect():
         bank_slot_url=f"https://buy.stripe.com/4gM9AMg348nt2Y7185cMM04?client_reference_id={_cfg().LICENCE_KEY}",
         today=date.today().isoformat(),
         balance_providers=balance_providers,
+        has_simplefin=has_simplefin,
+        has_enablebanking=has_enablebanking,
+        simplefin_subscription_lapsed=sf_lapsed,
+        simplefin_access_revoked_token_ids=sf_revoked_token_ids,
+        simplefin_pending_resume=sf_pending_resume,
         active="bank",
     )
 
@@ -1022,6 +1046,14 @@ def status():
             except (ValueError, TypeError):
                 pass
 
+    has_simplefin = any(t.get("provider") == "simplefin" for t in all_tokens)
+    has_enablebanking = any(
+        t.get("provider") not in ("simplefin",) and t.get("sync_mode") != "balance"
+        for t in all_tokens
+    )
+    sf_lapsed = db.get_setting("simplefin_subscription_lapsed") == "1"
+    sf_revoked_setting = (db.get_setting("simplefin_access_revoked") or "").strip()
+    sf_revoked_token_ids = {x for x in sf_revoked_setting.split(",") if x}
     return render_template("status.html",
         tokens=tokens,
         all_tokens=all_tokens,
@@ -1051,6 +1083,10 @@ def status():
         streak=streak,
         fun_message=fun_message,
         show_review_prompt=show_review_prompt,
+        has_simplefin=has_simplefin,
+        has_enablebanking=has_enablebanking,
+        simplefin_subscription_lapsed=sf_lapsed,
+        simplefin_access_revoked_token_ids=sf_revoked_token_ids,
         active="status",
     )
 
