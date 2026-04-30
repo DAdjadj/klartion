@@ -217,6 +217,73 @@ def list_accounts(
     return _accounts_call(access_url, params)
 
 
+def fetch_accounts_chunked(
+    access_url: str,
+    *,
+    start_epoch: int,
+    end_epoch: int,
+    include_pending: bool = True,
+) -> dict:
+    """Fetch the full Account Set across a date range, chunking transparently
+    into 90-day windows. Returns a merged Account Set:
+      {"errlist": [...], "connections": [...], "accounts": [...]}
+    Connections deduped by conn_id; accounts deduped by id; transactions
+    deduped by (account_id, transaction_id) across chunks."""
+    if end_epoch < start_epoch:
+        raise SimpleFinError("end date is before start date")
+
+    base_params: dict = {}
+    if include_pending:
+        base_params["pending"] = "1"
+
+    merged_errlist: list = []
+    merged_conns: list = []
+    seen_conns: set = set()
+    accounts_by_id: dict = {}
+    seen_tx: set = set()
+
+    cursor = start_epoch
+    while cursor < end_epoch:
+        chunk_end = min(cursor + MAX_RANGE_SECONDS, end_epoch)
+        params = dict(base_params)
+        params["start-date"] = str(cursor)
+        params["end-date"] = str(chunk_end)
+        chunk = _accounts_call(access_url, params)
+
+        for err in (chunk.get("errlist") or chunk.get("errors") or []):
+            merged_errlist.append(err)
+        for conn in chunk.get("connections", []):
+            cid = conn.get("conn_id") or conn.get("id")
+            if cid and cid not in seen_conns:
+                seen_conns.add(cid)
+                merged_conns.append(conn)
+        for acct in chunk.get("accounts", []):
+            aid = acct.get("id")
+            if not aid:
+                continue
+            stored = accounts_by_id.get(aid)
+            if stored is None:
+                stored = {k: v for k, v in acct.items() if k != "transactions"}
+                stored["transactions"] = []
+                accounts_by_id[aid] = stored
+            for tx in acct.get("transactions", []):
+                tid = tx.get("id")
+                if not tid:
+                    continue
+                key = (aid, tid)
+                if key in seen_tx:
+                    continue
+                seen_tx.add(key)
+                stored["transactions"].append(tx)
+        cursor = chunk_end
+
+    return {
+        "errlist": merged_errlist,
+        "connections": merged_conns,
+        "accounts": list(accounts_by_id.values()),
+    }
+
+
 def get_transactions(
     access_url: str,
     account_id: str,
