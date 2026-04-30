@@ -372,7 +372,10 @@ def detect_url():
 
 @app.route("/connect", methods=["GET", "POST"])
 def connect():
-    error    = None
+    # Surface ?error= from query string so redirects from /connect/simplefin/claim,
+    # /pick-account, and /callback render their messages on this page. The error
+    # ends up inside `{{ error }}` in connect.html, which Jinja auto-escapes.
+    error    = request.args.get("error") or None
     auth_url = None
     pending  = db.get_setting("pending_bank_name")
 
@@ -468,6 +471,10 @@ def connect():
             db.set_setting("pending_bank_country", "")
             db.set_setting("pending_start_sync_date", "")
             db.set_setting("pending_reauth_token_id", "")
+            for key in ("pending_simplefin_access_url", "pending_simplefin_accounts",
+                        "pending_simplefin_raw_accounts", "pending_simplefin_start_sync_date",
+                        "pending_simplefin_warning", "pending_simplefin_skipped"):
+                db.set_setting(key, "")
             return redirect(url_for("connect"))
 
     import glob
@@ -611,15 +618,35 @@ def callback():
 @app.route("/pick-account")
 def pick_account():
     import json
+    error = request.args.get("error") or None
+    sf_accounts_json = db.get_setting("pending_simplefin_accounts")
+    if sf_accounts_json:
+        accounts = json.loads(sf_accounts_json)
+        warning = db.get_setting("pending_simplefin_warning") or ""
+        skipped = db.get_setting("pending_simplefin_skipped") or "0"
+        try:
+            skipped_count = int(skipped)
+        except ValueError:
+            skipped_count = 0
+        from datetime import date
+        return render_template("pick_account_simplefin.html",
+            accounts=accounts,
+            warning=warning,
+            skipped=skipped_count,
+            error=error,
+            today=date.today().isoformat(),
+            active="pick-account")
     accounts_json = db.get_setting("pending_auth_accounts")
     if not accounts_json:
         return redirect(url_for("connect"))
     accounts = json.loads(accounts_json)
-    return render_template("pick_account.html", accounts=accounts, active="pick-account")
+    return render_template("pick_account.html", accounts=accounts, error=error, active="pick-account")
 
 @app.route("/pick-account", methods=["POST"])
 def pick_account_post():
-    import json
+    if db.get_setting("pending_simplefin_access_url"):
+        return _finalize_simplefin_connection()
+
     account_uid = request.form.get("account_uid")
     if not account_uid:
         return redirect(url_for("pick_account"))
@@ -641,6 +668,269 @@ def pick_account_post():
                 "pending_auth_bank_name", "pending_auth_bank_country"]:
         db.set_setting(key, "")
     return redirect(url_for("status"))
+
+
+@app.route("/connect/simplefin/claim", methods=["POST"])
+def connect_simplefin_claim():
+    """Claim a SimpleFIN setup token, list accounts, stash pending state, redirect to picker.
+    Setup tokens are one-shot, so the access URL is encrypted and persisted before
+    enumerating accounts — that way a /accounts failure can be retried without
+    burning the token."""
+    import json
+    from .. import simplefin, crypto
+
+    setup_token = request.form.get("simplefin_setup_token", "").strip()
+    start_sync_date = request.form.get("start_sync_date", "").strip()
+    if not setup_token:
+        return redirect(url_for("connect") + "?error=Setup token is required.")
+
+    capacity_error = _ensure_global_bank_capacity(db.get_all_tokens(), new_seats=1)
+    if capacity_error:
+        return redirect(url_for("connect") + "?error=" + capacity_error)
+
+    try:
+        access_url = simplefin.claim_setup_token(setup_token)
+    except simplefin.SimpleFinTokenAlreadyClaimed as e:
+        logger.warning("SimpleFIN setup token already claimed")
+        return redirect(url_for("connect") + "?error=" + str(e))
+    except simplefin.SimpleFinError as e:
+        # SimpleFinError messages are already credential-scrubbed by simplefin.py.
+        logger.error("SimpleFIN claim error: %s", e)
+        return redirect(url_for("connect") + "?error=" + str(e))
+    except Exception as e:
+        # Belt-and-suspenders: scrub any unexpected exception too.
+        safe_msg = simplefin.strip_credentials(str(e))
+        logger.error("Unexpected SimpleFIN claim error: %s", safe_msg)
+        return redirect(url_for("connect") + "?error=Could not claim setup token: " + safe_msg)
+
+    # Persist the access URL immediately so a later failure does not lose it.
+    encrypted_url = crypto.encrypt_credentials({"access_url": access_url})
+    db.set_setting("pending_simplefin_access_url", encrypted_url)
+    if start_sync_date:
+        db.set_setting("pending_simplefin_start_sync_date", start_sync_date)
+    else:
+        db.set_setting("pending_simplefin_start_sync_date", "")
+
+    try:
+        # balances_only=True: the picker only needs account names + balances,
+        # not transactions. Saves bandwidth and doesn't pre-burn the user's
+        # 24/day /accounts budget on data the picker won't display.
+        account_set = simplefin.list_accounts(access_url, balances_only=True)
+    except simplefin.SimpleFinSubscriptionLapsed as e:
+        return redirect(url_for("connect") + "?error=" + str(e))
+    except simplefin.SimpleFinAccessRevoked as e:
+        db.set_setting("pending_simplefin_access_url", "")
+        db.set_setting("pending_simplefin_start_sync_date", "")
+        return redirect(url_for("connect") + "?error=" + str(e))
+    except Exception as e:
+        safe_msg = simplefin.strip_credentials(str(e))
+        logger.error("SimpleFIN list_accounts failed: %s", safe_msg)
+        return redirect(url_for("connect") + "?error=Could not list accounts. Please try again.")
+
+    usable_count, err_msg = _process_simplefin_account_set(account_set)
+    if usable_count == 0:
+        db.set_setting("pending_simplefin_access_url", "")
+        db.set_setting("pending_simplefin_start_sync_date", "")
+        return redirect(url_for("connect") + "?error=" + (err_msg or "No usable accounts."))
+
+    # Avoid /pick-account confusion if EB-style state is also lingering.
+    for key in ("pending_auth_session_id", "pending_auth_accounts", "pending_auth_valid_until",
+                "pending_auth_bank_name", "pending_auth_bank_country"):
+        db.set_setting(key, "")
+
+    return redirect(url_for("pick_account"))
+
+
+def _process_simplefin_account_set(account_set: dict) -> tuple:
+    """Filter raw SimpleFIN accounts and persist the picker-ready shape.
+    Returns (usable_count, error_msg). On success, all pending_simplefin_*
+    settings except access_url and start_sync_date are populated."""
+    import json as _json
+    raw = account_set.get("accounts", []) or []
+    usable: list = []
+    skipped = 0
+    for acct in raw:
+        currency = acct.get("currency") or ""
+        if currency.startswith("http://") or currency.startswith("https://"):
+            skipped += 1
+            continue
+        usable.append(acct)
+
+    if not usable:
+        msg = "No usable accounts found"
+        if skipped:
+            msg += f" ({skipped} skipped due to custom currency)"
+        return 0, msg + "."
+
+    errlist = account_set.get("errlist") or account_set.get("errors") or []
+    if errlist:
+        sanitized_parts: list = []
+        for e in errlist:
+            if isinstance(e, dict):
+                txt = (e.get("msg") or e.get("code") or "").strip()
+            elif isinstance(e, str):
+                txt = e.strip()
+            else:
+                txt = ""
+            if txt:
+                sanitized_parts.append(txt[:200])
+        if sanitized_parts:
+            db.set_setting(
+                "pending_simplefin_warning",
+                ("SimpleFIN reported: " + "; ".join(sanitized_parts))[:600],
+            )
+
+    pick_accounts: list = []
+    for acct in usable:
+        org = acct.get("org") or {}
+        pick_accounts.append({
+            "id": acct.get("id", ""),
+            "name": acct.get("name", ""),
+            "currency": acct.get("currency", ""),
+            "org_name": org.get("name", "") or org.get("domain", ""),
+            "balance": acct.get("balance", ""),
+        })
+
+    db.set_setting("pending_simplefin_accounts", _json.dumps(pick_accounts))
+    db.set_setting("pending_simplefin_raw_accounts", _json.dumps(usable))
+    db.set_setting("pending_simplefin_skipped", str(skipped))
+    return len(usable), None
+
+
+@app.route("/connect/simplefin/resume", methods=["POST"])
+def connect_simplefin_resume():
+    """Retry listing accounts using a previously-claimed access URL.
+
+    Recovers from the case where claim_setup_token() succeeded but
+    list_accounts() failed: the access URL is saved encrypted in
+    pending_simplefin_access_url but no accounts list exists. The setup
+    token is one-shot, so the only way forward is to reuse the saved URL.
+    """
+    from .. import simplefin, crypto
+
+    encrypted_url = db.get_setting("pending_simplefin_access_url")
+    if not encrypted_url:
+        return redirect(url_for("connect") + "?error=No pending SimpleFIN session to resume.")
+    try:
+        creds = crypto.decrypt_credentials(encrypted_url)
+        access_url = creds.get("access_url", "") if isinstance(creds, dict) else ""
+    except Exception as e:
+        for key in ("pending_simplefin_access_url", "pending_simplefin_accounts",
+                    "pending_simplefin_raw_accounts", "pending_simplefin_start_sync_date",
+                    "pending_simplefin_warning", "pending_simplefin_skipped"):
+            db.set_setting(key, "")
+        return redirect(url_for("connect") + "?error=Could not recover pending SimpleFIN session.")
+    if not access_url:
+        for key in ("pending_simplefin_access_url",):
+            db.set_setting(key, "")
+        return redirect(url_for("connect") + "?error=Pending SimpleFIN session is invalid.")
+
+    try:
+        account_set = simplefin.list_accounts(access_url, balances_only=True)
+    except simplefin.SimpleFinSubscriptionLapsed as e:
+        return redirect(url_for("connect") + "?error=" + str(e))
+    except simplefin.SimpleFinAccessRevoked as e:
+        for key in ("pending_simplefin_access_url", "pending_simplefin_start_sync_date"):
+            db.set_setting(key, "")
+        return redirect(url_for("connect") + "?error=" + str(e))
+    except Exception as e:
+        safe_msg = simplefin.strip_credentials(str(e))
+        logger.error("SimpleFIN resume list_accounts failed: %s", safe_msg)
+        return redirect(url_for("connect") + "?error=Could not list accounts. Please try again.")
+
+    usable_count, err_msg = _process_simplefin_account_set(account_set)
+    if usable_count == 0:
+        for key in ("pending_simplefin_access_url", "pending_simplefin_start_sync_date"):
+            db.set_setting(key, "")
+        return redirect(url_for("connect") + "?error=" + (err_msg or "No usable accounts."))
+
+    return redirect(url_for("pick_account"))
+
+
+def _finalize_simplefin_connection():
+    """Save one token row per picked SimpleFIN account, claiming a license seat each.
+    Rolls back saved rows if any seat claim fails."""
+    import json
+    from .. import crypto
+
+    encrypted_url = db.get_setting("pending_simplefin_access_url")
+    raw_accounts_json = db.get_setting("pending_simplefin_raw_accounts")
+    if not encrypted_url or not raw_accounts_json:
+        return redirect(url_for("connect") + "?error=Pending SimpleFIN session expired. Please regenerate a setup token.")
+
+    selected_ids = request.form.getlist("simplefin_account_ids")
+    if not selected_ids:
+        return redirect(url_for("pick_account") + "?error=Please pick at least one account.")
+
+    try:
+        creds = crypto.decrypt_credentials(encrypted_url)
+        access_url = creds.get("access_url", "") if isinstance(creds, dict) else ""
+    except Exception as e:
+        logger.error("Could not decrypt pending SimpleFIN access URL: %s", e)
+        for key in ("pending_simplefin_access_url", "pending_simplefin_accounts",
+                    "pending_simplefin_raw_accounts", "pending_simplefin_start_sync_date",
+                    "pending_simplefin_warning", "pending_simplefin_skipped"):
+            db.set_setting(key, "")
+        return redirect(url_for("connect") + "?error=Could not recover pending SimpleFIN session.")
+    if not access_url:
+        return redirect(url_for("connect") + "?error=Pending SimpleFIN session is invalid.")
+
+    raw_accounts = {a.get("id"): a for a in json.loads(raw_accounts_json) if a.get("id")}
+
+    # If the user is reconnecting after access was revoked, replace the stale
+    # token rows: delete them first so seat capacity reflects reality and the
+    # new rows take their place rather than coexisting with broken siblings.
+    revoked_setting = (db.get_setting("simplefin_access_revoked") or "").strip()
+    revoked_ids = {x for x in revoked_setting.split(",") if x}
+    for tid_str in revoked_ids:
+        try:
+            db.clear_token_by_id(int(tid_str))
+        except (TypeError, ValueError):
+            continue
+    if revoked_ids:
+        db.set_setting("simplefin_access_revoked", "")
+
+    capacity_error = _ensure_global_bank_capacity(db.get_all_tokens(), new_seats=len(selected_ids))
+    if capacity_error:
+        return redirect(url_for("connect") + "?error=" + capacity_error)
+
+    start_sync_date = db.get_setting("pending_simplefin_start_sync_date") or ""
+
+    saved_token_ids: list = []
+    for account_id in selected_ids:
+        acct = raw_accounts.get(account_id)
+        if not acct:
+            continue
+        org = acct.get("org") or {}
+        org_name = org.get("name") or org.get("domain") or ""
+        bank_name = (acct.get("name") or org_name or "SimpleFIN account")[:200]
+        token_id = db.save_simplefin_token(
+            bank_name=bank_name,
+            bank_country="",
+            provider_account_id=account_id,
+            provider_credentials=encrypted_url,
+            start_sync_date=start_sync_date,
+        )
+        token = db.get_token_by_id(token_id)
+        seat_error = _claim_bank_seat(token)
+        if seat_error:
+            db.clear_token_by_id(token_id)
+            for tid in saved_token_ids:
+                db.clear_token_by_id(tid)
+            return redirect(url_for("connect") + "?error=" + seat_error)
+        saved_token_ids.append(token_id)
+
+    for key in ("pending_simplefin_access_url", "pending_simplefin_accounts",
+                "pending_simplefin_raw_accounts", "pending_simplefin_start_sync_date",
+                "pending_simplefin_warning", "pending_simplefin_skipped"):
+        db.set_setting(key, "")
+    db.set_setting("simplefin_subscription_lapsed", "")
+    db.set_setting("simplefin_access_revoked", "")
+
+    _start_scheduler_if_ready()
+    import threading
+    threading.Thread(target=sync.run, daemon=True).start()
+    return redirect(url_for("status", success=1))
 
 @app.route("/status")
 def status():
