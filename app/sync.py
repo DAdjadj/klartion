@@ -1,6 +1,7 @@
 import logging
 import time
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from . import config, db, enablebanking, notion, email_notify, licence, crypto
 
 logger = logging.getLogger(__name__)
@@ -69,8 +70,9 @@ def run():
     for i, tokens in enumerate(all_tokens):
         if i > 0:
             time.sleep(2)
-        # Handle balance-only providers separately
-        if tokens.get("sync_mode") == "balance":
+        sync_mode = tokens.get("sync_mode")
+        provider = tokens.get("provider")
+        if sync_mode == "balance":
             success, count, label = _sync_balance_token(tokens)
             if success:
                 total_written += count
@@ -78,100 +80,13 @@ def run():
             else:
                 errors.append(label)
             continue
-
-        bank_label = f"{tokens.get('bank_name', 'Unknown')} ({tokens.get('bank_country', '')})"
-        token_id = tokens["id"]
-        session_id = tokens["session_id"]
-        account_uid = tokens.get("access_token")
-
-        # 3. Check token expiry warning (14 days)
-        if tokens.get("expires_at"):
-            try:
-                expires = datetime.fromisoformat(tokens["expires_at"].replace("Z", "+00:00"))
-                days_left = max(0, (expires - datetime.now(timezone.utc)).days)
-                if days_left <= 14:
-                    email_notify.send_token_expiry_warning(tokens.get("bank_name", "your bank"), days_left)
-            except Exception:
-                pass
-
-        if not account_uid:
-            errors.append(f"{bank_label}: No account UID found")
-            continue
-
-        # 4. Determine date range
-        last_sync_at = tokens.get("last_sync_at")
-        start_sync_date = tokens.get("start_sync_date") or db.get_setting("start_sync_date")
-        if last_sync_at:
-            parsed_last_sync = datetime.fromisoformat(last_sync_at.replace("Z", "+00:00") if "Z" in last_sync_at else last_sync_at)
-            date_from = (parsed_last_sync - timedelta(days=2)).strftime("%Y-%m-%d")
-        elif start_sync_date:
-            date_from = start_sync_date
+        if provider == "simplefin":
+            written, token_errors, token_balance_lines = _sync_simplefin_token(tokens, category_rules)
         else:
-            date_from = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
-        date_to = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-        logger.info("Syncing %s: %s to %s", bank_label, date_from, date_to)
-
-        # 5. Fetch transactions
-        try:
-            all_transactions = enablebanking.get_transactions(session_id, account_uid, date_from, date_to)
-        except Exception as e:
-            import re
-            err = re.sub(r" for url: https?://\S+", "", str(e))
-            errors.append(f"{bank_label}: {err}")
-            logger.error("Failed to fetch transactions for %s: %s", bank_label, err)
-            continue
-
-        logger.info("Fetched %d transactions from %s", len(all_transactions), bank_label)
-
-        # 6. Deduplicate
-        tx_prefix = f"{account_uid}:"
-        known_ids = db.get_known_tx_ids(tx_id_prefix=tx_prefix)
-        new_transactions = [t for t in all_transactions if _scoped_tx_id(account_uid, t) not in known_ids]
-        if tokens.get("skip_pending"):
-            before = len(new_transactions)
-            new_transactions = [t for t in new_transactions if _is_booked_status(t.get("status"))]
-            if before != len(new_transactions):
-                logger.info("Skipped %d pending transactions (skip_pending enabled)", before - len(new_transactions))
-        logger.info("%d new transactions after deduplication", len(new_transactions))
-
-        # 7. Reconcile pending
-        _reconcile_pending(account_uid, all_transactions)
-
-        # 8. Fetch account balance (before writing so we can attach to transactions)
-        current_balance = None
-        current_balance_currency = None
-        try:
-            balances = enablebanking.get_balances(session_id, account_uid)
-            current_balance, current_balance_currency = _extract_balance(balances)
-            if current_balance is not None:
-                db.update_token_fields(token_id, last_balance=str(current_balance), last_balance_currency=current_balance_currency)
-                balance_lines.append(f"{tokens.get('bank_name', 'Unknown')}: {current_balance:,.2f} {current_balance_currency}")
-                logger.info("Balance for %s: %s %s", bank_label, current_balance, current_balance_currency)
-        except Exception as e:
-            logger.warning("Could not fetch balance for %s: %s", bank_label, e)
-
-        # 9. Write to Notion
-        written = 0
-        for tx in new_transactions:
-            try:
-                normalised = _normalise(tx, category_rules=category_rules)
-                normalised["bank_name"] = tokens.get("bank_name", "")
-                if current_balance is not None:
-                    normalised["balance"] = current_balance
-                notion_page_id = notion.write_transaction(normalised)
-                db.upsert_transaction(
-                    tx_id=_scoped_tx_id(account_uid, tx),
-                    notion_page_id=notion_page_id,
-                    status=normalised["status"].lower(),
-                )
-                written += 1
-            except Exception as e:
-                logger.error("Failed to write transaction %s: %s", _get_tx_id(tx), e)
-
-        db.update_token_fields(token_id, last_sync_at=datetime.now(timezone.utc).isoformat())
+            written, token_errors, token_balance_lines = _sync_enablebanking_token(tokens, category_rules)
         total_written += written
-        logger.info("Synced %d transactions from %s", written, bank_label)
+        errors.extend(token_errors)
+        balance_lines.extend(token_balance_lines)
 
     # 11. Log and notify
     if errors:
@@ -285,6 +200,107 @@ def _sync_balance_token(tokens: dict):
     return True, tx_count, label
 
 
+def _sync_enablebanking_token(tokens: dict, category_rules: dict) -> tuple[int, list, list]:
+    """Sync one Enable Banking token (one row per linked account).
+    Returns (written, errors, balance_lines)."""
+    written = 0
+    errors: list = []
+    balance_lines: list = []
+
+    bank_label = f"{tokens.get('bank_name', 'Unknown')} ({tokens.get('bank_country', '')})"
+    token_id = tokens["id"]
+    session_id = tokens["session_id"]
+    account_uid = tokens.get("access_token")
+
+    if tokens.get("expires_at"):
+        try:
+            expires = datetime.fromisoformat(tokens["expires_at"].replace("Z", "+00:00"))
+            days_left = max(0, (expires - datetime.now(timezone.utc)).days)
+            if days_left <= 14:
+                email_notify.send_token_expiry_warning(tokens.get("bank_name", "your bank"), days_left)
+        except Exception:
+            pass
+
+    if not account_uid:
+        errors.append(f"{bank_label}: No account UID found")
+        return written, errors, balance_lines
+
+    last_sync_at = tokens.get("last_sync_at")
+    start_sync_date = tokens.get("start_sync_date") or db.get_setting("start_sync_date")
+    if last_sync_at:
+        parsed_last_sync = datetime.fromisoformat(last_sync_at.replace("Z", "+00:00") if "Z" in last_sync_at else last_sync_at)
+        date_from = (parsed_last_sync - timedelta(days=2)).strftime("%Y-%m-%d")
+    elif start_sync_date:
+        date_from = start_sync_date
+    else:
+        date_from = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
+    date_to = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    logger.info("Syncing %s: %s to %s", bank_label, date_from, date_to)
+
+    try:
+        all_transactions = enablebanking.get_transactions(session_id, account_uid, date_from, date_to)
+    except Exception as e:
+        import re
+        err = re.sub(r" for url: https?://\S+", "", str(e))
+        errors.append(f"{bank_label}: {err}")
+        logger.error("Failed to fetch transactions for %s: %s", bank_label, err)
+        return written, errors, balance_lines
+
+    logger.info("Fetched %d transactions from %s", len(all_transactions), bank_label)
+
+    tx_prefix = f"{account_uid}:"
+    known_ids = db.get_known_tx_ids(tx_id_prefix=tx_prefix)
+    new_transactions = [t for t in all_transactions if _scoped_tx_id(account_uid, t) not in known_ids]
+    if tokens.get("skip_pending"):
+        before = len(new_transactions)
+        new_transactions = [t for t in new_transactions if _is_booked_status(t.get("status"))]
+        if before != len(new_transactions):
+            logger.info("Skipped %d pending transactions (skip_pending enabled)", before - len(new_transactions))
+    logger.info("%d new transactions after deduplication", len(new_transactions))
+
+    _reconcile_pending(account_uid, all_transactions)
+
+    current_balance = None
+    current_balance_currency = None
+    try:
+        balances = enablebanking.get_balances(session_id, account_uid)
+        current_balance, current_balance_currency = _extract_balance(balances)
+        if current_balance is not None:
+            db.update_token_fields(token_id, last_balance=str(current_balance), last_balance_currency=current_balance_currency)
+            balance_lines.append(f"{tokens.get('bank_name', 'Unknown')}: {current_balance:,.2f} {current_balance_currency}")
+            logger.info("Balance for %s: %s %s", bank_label, current_balance, current_balance_currency)
+    except Exception as e:
+        logger.warning("Could not fetch balance for %s: %s", bank_label, e)
+
+    for tx in new_transactions:
+        try:
+            normalised = _normalise(tx, category_rules=category_rules)
+            normalised["bank_name"] = tokens.get("bank_name", "")
+            if current_balance is not None:
+                normalised["balance"] = current_balance
+            notion_page_id = notion.write_transaction(normalised)
+            db.upsert_transaction(
+                tx_id=_scoped_tx_id(account_uid, tx),
+                notion_page_id=notion_page_id,
+                status=normalised["status"].lower(),
+            )
+            written += 1
+        except Exception as e:
+            logger.error("Failed to write transaction %s: %s", _get_tx_id(tx), e)
+
+    db.update_token_fields(token_id, last_sync_at=datetime.now(timezone.utc).isoformat())
+    logger.info("Synced %d transactions from %s", written, bank_label)
+
+    return written, errors, balance_lines
+
+
+def _sync_simplefin_token(tokens: dict, category_rules: dict) -> tuple[int, list, list]:
+    """Sync a SimpleFIN token. Wired up in Branch 2; this stub guards the
+    dispatch path before SimpleFIN tokens can be created via the UI."""
+    raise NotImplementedError("SimpleFIN sync is not yet implemented (Branch 2).")
+
+
 def _reconcile_pending(account_uid: str, all_transactions: list):
     """
     Check previously imported pending transactions against the new batch.
@@ -373,6 +389,54 @@ def _normalise(tx: dict, category_rules: dict = None) -> dict:
         "merchant":  merchant,
         "category":  category,
         "reference": reference,
+        "direction": direction,
+        "status":    status,
+    }
+
+
+def _normalise_simplefin(tx: dict, account: dict, category_rules: dict = None) -> dict:
+    """Normalise a SimpleFIN transaction into Klartion's internal format.
+    Mirrors _normalise() but reads SimpleFIN's signed-string amounts,
+    epoch-second posted timestamps, and single description field."""
+    amount_str = tx.get("amount", "0")
+    try:
+        amount_dec = Decimal(amount_str)
+    except (InvalidOperation, TypeError, ValueError):
+        amount_dec = Decimal(0)
+    direction = "in" if amount_dec >= 0 else "out"
+    amount = float(abs(amount_dec))
+
+    currency = account.get("currency") or "USD"
+
+    description = (tx.get("description") or "").strip() or "Unknown"
+    merchant = description[:200]
+
+    bank_category = ""
+    extra = tx.get("extra")
+    if isinstance(extra, dict):
+        bank_category = extra.get("category") or ""
+
+    if category_rules and merchant in category_rules:
+        category = category_rules[merchant]
+    else:
+        category = bank_category or "Uncategorised"
+
+    posted = tx.get("posted")
+    if isinstance(posted, (int, float)):
+        date = datetime.fromtimestamp(posted, tz=timezone.utc).strftime("%Y-%m-%d")
+    else:
+        date = ""
+
+    status = "Pending" if tx.get("pending") else "Cleared"
+
+    return {
+        "tx_id":     tx.get("id", ""),
+        "date":      date,
+        "amount":    amount,
+        "currency":  currency,
+        "merchant":  merchant,
+        "category":  category,
+        "reference": "",
         "direction": direction,
         "status":    status,
     }
