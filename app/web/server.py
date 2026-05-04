@@ -554,6 +554,15 @@ def reauthorise():
     bank_seat_error, bank_seat_result = _get_bank_seat_error(all_tokens)
     bank_account_limit = int((bank_seat_result or {}).get("limit") or _get_bank_account_limit())
     bank_seat_usage = int((bank_seat_result or {}).get("used") or len(all_tokens))
+    import glob
+    from ..providers import get_all_providers
+    from datetime import date
+    has_simplefin = any(t.get("provider") == "simplefin" for t in all_tokens)
+    has_enablebanking = any(
+        t.get("provider") not in ("simplefin",) and t.get("sync_mode") != "balance"
+        for t in all_tokens
+    )
+    sf_revoked_setting = (db.get_setting("simplefin_access_revoked") or "").strip()
     return render_template("connect.html",
         error=None,
         success=None,
@@ -563,9 +572,21 @@ def reauthorise():
         bank_seat_error=bank_seat_error,
         pending_bank=bank_name,
         sync_time=_cfg().SYNC_TIME,
+        pem_ready=bool(glob.glob("/app/data/*.pem")),
+        eb_app_id=_cfg().EB_APP_ID,
         bank_account_limit=bank_account_limit,
         bank_seat_usage=bank_seat_usage,
         bank_slot_url=f"https://buy.stripe.com/4gM9AMg348nt2Y7185cMM04?client_reference_id={_cfg().LICENCE_KEY}",
+        today=date.today().isoformat(),
+        balance_providers=get_all_providers(),
+        has_simplefin=has_simplefin,
+        has_enablebanking=has_enablebanking,
+        simplefin_subscription_lapsed=db.get_setting("simplefin_subscription_lapsed") == "1",
+        simplefin_access_revoked_token_ids={x for x in sf_revoked_setting.split(",") if x},
+        simplefin_pending_resume=bool(
+            db.get_setting("pending_simplefin_access_url")
+            and not db.get_setting("pending_simplefin_accounts")
+        ),
         active="bank",
     )
 
@@ -902,13 +923,23 @@ def _finalize_simplefin_connection():
     raw_accounts = {a.get("id"): a for a in json.loads(raw_accounts_json) if a.get("id")}
 
     # If the user is reconnecting after access was revoked, replace the stale
-    # token rows: delete them first so seat capacity reflects reality and the
-    # new rows take their place rather than coexisting with broken siblings.
+    # token rows. Preserve their transaction namespace by account ID so
+    # duplicate detection survives a SimpleFIN conn_id change on reconnect.
     revoked_setting = (db.get_setting("simplefin_access_revoked") or "").strip()
     revoked_ids = {x for x in revoked_setting.split(",") if x}
+    preserved_connection_ids: dict = {}
     for tid_str in revoked_ids:
         try:
-            db.clear_token_by_id(int(tid_str))
+            token = db.get_token_by_id(int(tid_str))
+            if token:
+                account_id = token.get("provider_account_id") or ""
+                connection_id = (
+                    token.get("provider_connection_id")
+                    or db.get_simplefin_connection_id_from_transactions(account_id)
+                )
+                if account_id and connection_id:
+                    preserved_connection_ids[account_id] = connection_id
+                db.clear_token_by_id(int(tid_str))
         except (TypeError, ValueError):
             continue
     if revoked_ids:
@@ -934,6 +965,7 @@ def _finalize_simplefin_connection():
             provider_account_id=account_id,
             provider_credentials=encrypted_url,
             start_sync_date=start_sync_date,
+            provider_connection_id=preserved_connection_ids.get(account_id) or acct.get("conn_id") or "default",
         )
         token = db.get_token_by_id(token_id)
         seat_error = _claim_bank_seat(token)
