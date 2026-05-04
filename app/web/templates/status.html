@@ -104,13 +104,13 @@
 <div class="status-layout">
   <div class="status-main">
     <div class="card">
-      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1.5rem;">
-        <div>
+      <div class="card-header-row">
+        <div class="card-header-text">
           <div class="card-title" style="margin-bottom:0.25rem;">Status</div>
           <div class="card-sub" style="margin-bottom:0;">{{ fun_message }}</div>
         </div>
         {% if has_enablebanking or not has_simplefin %}
-        <button class="btn btn-ghost" id="sync-btn" onclick="runSync()" {% if has_simplefin %}title="SimpleFIN accounts only sync once per day. Manual sync still uses one of your daily SimpleFIN API calls."{% endif %}>Sync now</button>
+        <button class="btn btn-ghost sync-btn" id="sync-btn" onclick="runSync()" {% if has_simplefin %}title="SimpleFIN accounts only sync once per day. Manual sync still uses one of your daily SimpleFIN API calls."{% endif %}>Sync now</button>
         {% endif %}
       </div>
       <div class="stat-row">
@@ -140,6 +140,7 @@
         </form>
       </div>
       {% if syncs %}
+        <div class="log-table-wrap">
         <table class="log-table">
           <thead>
             <tr>
@@ -160,6 +161,7 @@
             {% endfor %}
           </tbody>
         </table>
+        </div>
         {% if total_pages > 1 %}
         <div style="display:flex;justify-content:center;align-items:center;gap:0.5rem;margin-top:1rem;">
           {% if page > 1 %}<a href="?page={{ page - 1 }}" class="btn btn-ghost" style="font-size:12px;padding:4px 12px;">&larr;</a>{% endif %}
