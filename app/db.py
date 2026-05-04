@@ -91,6 +91,14 @@ def init():
         conn.execute("ALTER TABLE tokens ADD COLUMN skip_pending INTEGER NOT NULL DEFAULT 0")
     except sqlite3.OperationalError:
         pass
+    try:
+        conn.execute("ALTER TABLE tokens ADD COLUMN provider_account_id TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE tokens ADD COLUMN provider_connection_id TEXT")
+    except sqlite3.OperationalError:
+        pass
     rows = conn.execute("SELECT id FROM tokens WHERE license_seat_id IS NULL OR license_seat_id = ''").fetchall()
     for row in rows:
         conn.execute("UPDATE tokens SET license_seat_id = ? WHERE id = ?", (str(uuid.uuid4()), row["id"]))
@@ -208,6 +216,42 @@ def save_provider_token(bank_name, provider, provider_credentials, user_id="defa
     return cur.lastrowid
 
 
+def save_simplefin_token(bank_name, bank_country, provider_account_id, provider_credentials, user_id="default", start_sync_date="", provider_connection_id=""):
+    """Save a SimpleFIN token row. One row per linked account; provider_credentials
+    holds the encrypted access URL and is duplicated across all accounts that share
+    the same SimpleFIN connection."""
+    conn = get_conn()
+    cur = conn.execute("""
+        INSERT INTO tokens (user_id, bank_name, bank_country, provider, provider_credentials, provider_account_id, provider_connection_id, sync_mode, license_seat_id, start_sync_date)
+        VALUES (?, ?, ?, 'simplefin', ?, ?, ?, 'transactions', ?, ?)
+    """, (user_id, bank_name, bank_country, provider_credentials, provider_account_id, provider_connection_id, str(uuid.uuid4()), start_sync_date))
+    conn.commit()
+    conn.close()
+    return cur.lastrowid
+
+
+def get_simplefin_connection_id_from_transactions(provider_account_id, user_id="default"):
+    """Best-effort recovery of the SimpleFIN namespace used for existing tx IDs."""
+    if not provider_account_id:
+        return ""
+    marker = f":{provider_account_id}:"
+    prefix = "simplefin:"
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT tx_id FROM transactions WHERE user_id = ? AND tx_id LIKE 'simplefin:%' ORDER BY last_seen DESC",
+        (user_id,),
+    ).fetchall()
+    conn.close()
+    for row in rows:
+        tx_id = row["tx_id"] or ""
+        if not tx_id.startswith(prefix):
+            continue
+        idx = tx_id.find(marker, len(prefix))
+        if idx >= 0:
+            return tx_id[len(prefix):idx]
+    return ""
+
+
 def get_token_count(user_id="default"):
     conn = get_conn()
     count = conn.execute("SELECT COUNT(*) FROM tokens WHERE user_id = ?", (user_id,)).fetchone()[0]
@@ -216,7 +260,7 @@ def get_token_count(user_id="default"):
 
 
 def update_token_fields(token_id, **fields):
-    allowed = {"access_token", "session_id", "bank_name", "bank_country", "expires_at", "start_sync_date", "last_sync_at", "last_balance", "last_balance_currency", "provider_credentials", "license_seat_id", "skip_pending"}
+    allowed = {"access_token", "session_id", "bank_name", "bank_country", "expires_at", "start_sync_date", "last_sync_at", "last_balance", "last_balance_currency", "provider_credentials", "license_seat_id", "skip_pending", "provider_account_id", "provider_connection_id"}
     updates = {key: value for key, value in fields.items() if key in allowed}
     if not updates:
         return

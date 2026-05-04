@@ -13,7 +13,7 @@
 {% block content %}
 <div class="card">
   <div class="card-title">Bank</div>
-  <div class="card-sub">Step 5 of 6 — authorise read-only access via Enable Banking</div>
+  <div class="card-sub">Step 5 of 6 — authorise read-only access to your bank</div>
 
   {% if error %}
     <div class="alert alert-error">{{ error }}</div>
@@ -21,38 +21,39 @@
   {% if bank_seat_error %}
     <div class="alert alert-error">{{ bank_seat_error }}</div>
   {% endif %}
+  {% if simplefin_subscription_lapsed %}
+    <div class="alert alert-error">
+      Your SimpleFIN Bridge subscription has lapsed. <a href="https://bridge.simplefin.org" target="_blank" style="color:inherit; font-weight:600;">Renew at bridge.simplefin.org</a> to resume syncing.
+    </div>
+  {% endif %}
   {% if success %}
     <div class="alert alert-success">
       Bank connected. Your first sync runs at {{ sync_time }} — or trigger it manually from the status page.
     </div>
   {% endif %}
 
-  {% if not pem_ready and not auth_url %}
-    <form method="POST" enctype="multipart/form-data">
-      <input type="hidden" name="action" value="upload_pem">
-      <label style="margin-top:0;">Private key file (.pem)</label>
-      <input type="file" name="pem_file" id="pem-file-input" accept=".pem" required onchange="autoFillAppId(this)">
-      <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">The <code style="font-size:11px; color:var(--muted);">.pem</code> key file downloaded from Enable Banking. It stays on your server and is never shared.</div>
-      <label>Application ID <span style="font-size:11px; font-weight:400; color:var(--hint);">(auto-filled from filename)</span></label>
-      <input type="text" name="eb_app_id" id="eb-app-id-input" value="{{ eb_app_id }}" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" required>
-      <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">Filled automatically from your .pem filename. From your <a href="https://enablebanking.com/" target="_blank" style="color:var(--muted);">Enable Banking dashboard</a> under Applications.</div>
-      <script>
-      function autoFillAppId(input) {
-        if (!input.files || !input.files[0]) return;
-        var filename = input.files[0].name;
-        var appId = filename.replace(/\.pem$/i, '');
-        if (appId.length === 36) {
-          document.getElementById('eb-app-id-input').value = appId;
-        }
-      }
-      </script>
-      <button class="btn btn-primary" type="submit">Save & continue →</button>
-    </form>
-
-  {% elif pem_ready and not auth_url %}
+  {% if not auth_url %}
+    {% if pem_ready %}
     <div style="margin-bottom:1.5rem; padding:10px 14px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; font-size:13px; color:#166534; display:flex; align-items:center; gap:8px;">
-      <span>&#10003;</span> Private key loaded. <a href="/connect/reset-pem" style="color:var(--muted); font-size:12px; margin-left:auto;">Replace</a>
+      <span>&#10003;</span> Enable Banking private key loaded. <a href="/connect/reset-pem" style="color:var(--muted); font-size:12px; margin-left:auto;">Replace</a>
     </div>
+    {% endif %}
+
+    {% if simplefin_pending_resume %}
+    <div class="alert" style="margin-bottom:1.5rem; padding:12px 14px; background:#fef3c7; border:1px solid #fbbf24; border-radius:8px; font-size:13px; color:#78350f;">
+      <strong>Finish your SimpleFIN setup.</strong>
+      <p style="margin:6px 0 10px 0; font-size:12px; line-height:1.5;">Your setup token was claimed but listing accounts failed. Setup tokens are one-shot, so we saved your access &mdash; click below to retry.</p>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <form method="POST" action="/connect/simplefin/resume" style="display:inline;">
+          <button type="submit" class="btn btn-primary" style="font-size:12px; padding:6px 14px;">Resume listing accounts &rarr;</button>
+        </form>
+        <form method="POST" action="/connect" style="display:inline;">
+          <input type="hidden" name="action" value="cancel">
+          <button type="submit" class="btn btn-ghost" style="font-size:12px; padding:6px 14px;">Cancel and start over</button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
 
     {% if all_tokens %}
     <div style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.8px; color:var(--muted); margin-bottom:0.5rem;">Connected accounts ({{ bank_seat_usage }}/{{ bank_account_limit }} across all machines)</div>
@@ -65,13 +66,15 @@
           <div style="margin-top:8px; font-family:var(--mono); font-size:12px; color:var(--muted);">
             {% if t.sync_mode == 'balance' %}
             {{ loop.index }}. {{ t.bank_name }} <span style="font-size:10px;color:var(--hint);margin-left:4px;">balance only</span>
+            {% elif t.provider == 'simplefin' %}
+            {{ loop.index }}. {{ t.bank_name }} <span style="font-size:10px;color:var(--hint);margin-left:4px;">via SimpleFIN</span>
             {% else %}
             {{ loop.index }}. {{ t.bank_name }} ({{ t.bank_country }})
             {% endif %}
           </div>
         </div>
         <div style="display:flex;gap:6px;">
-          {% if t.sync_mode != 'balance' %}
+          {% if t.sync_mode != 'balance' and t.provider != 'simplefin' %}
           <div>
             <button type="button" class="btn btn-ghost" style="font-size:11px;padding:6px 10px;" onclick="this.style.display='none';this.nextElementSibling.style.display='flex';" id="reset-btn-{{ t.id }}">Reset sync</button>
             <form method="POST" action="/reset-sync" style="display:none;gap:4px;align-items:center;" id="reset-form-{{ t.id }}" onsubmit="return confirm('Reset sync for this account? Transactions from the selected date will be re-imported on the next sync.');">
@@ -88,6 +91,11 @@
           </form>
         </div>
       </div>
+      {% if t.provider == 'simplefin' and (t.id|string) in simplefin_access_revoked_token_ids %}
+      <div style="margin-top:8px; padding:8px 10px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; font-size:11px; color:#991b1b;">
+        SimpleFIN access revoked. <a href="https://bridge.simplefin.org" target="_blank" style="color:inherit; font-weight:600; text-decoration:underline;">Regenerate a setup token</a> and reconnect this account.
+      </div>
+      {% endif %}
       {% if t.sync_mode != 'balance' and t.expires_at %}
       <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--hint);">
         <span>Expires {{ t.expires_at[:10] }}</span>
@@ -132,6 +140,18 @@
 
     <!-- Bank mode (existing flow) -->
     <div id="mode-bank">
+
+    <!-- Region sub-toggle: EU vs US/Canada. Default to NA when no PEM is uploaded
+         so US/Canada-only customers don't have to figure out they need to flip
+         the toggle to access the SimpleFIN form. -->
+    <div style="display:flex;gap:4px;margin-bottom:1rem;background:var(--surface);border-radius:8px;padding:3px;border:1px solid var(--border);">
+      <button type="button" id="region-eu-btn" onclick="setRegion('eu')" style="flex:1;padding:8px;font-size:12px;font-weight:600;border:none;border-radius:6px;cursor:pointer;{% if pem_ready %}background:#37996b;color:#fff;{% else %}background:transparent;color:var(--muted);{% endif %}">European banks</button>
+      <button type="button" id="region-na-btn" onclick="setRegion('na')" style="flex:1;padding:8px;font-size:12px;font-weight:600;border:none;border-radius:6px;cursor:pointer;{% if pem_ready %}background:transparent;color:var(--muted);{% else %}background:#37996b;color:#fff;{% endif %}">US/Canadian banks (via SimpleFIN)</button>
+    </div>
+
+    <!-- EU sub-panel -->
+    <div id="bank-region-eu" {% if not pem_ready %}style="display:none;"{% endif %}>
+    {% if pem_ready %}
     <form method="POST" id="connect-form">
       <input type="hidden" name="action" value="start">
       <input type="hidden" id="inp-bank-name" name="bank_name">
@@ -151,6 +171,56 @@
       <div style="font-size:11px; color:var(--hint); margin-top:0.5rem;">Personal accounts only. 2,500+ banks across 29 European countries.</div>
       <button class="btn btn-primary" type="submit" id="connect-btn" disabled style="background:var(--border); opacity:0.5;">Authorise bank →</button>
     </form>
+    {% else %}
+    <form method="POST" enctype="multipart/form-data">
+      <input type="hidden" name="action" value="upload_pem">
+      <div style="font-size:13px; color:var(--muted); line-height:1.6; margin-bottom:1rem; padding:12px 14px; background:var(--surface); border:1px solid var(--border); border-radius:8px;">
+        <div style="font-weight:600; color:var(--text); margin-bottom:0.5rem;">EU banks need an Enable Banking key first</div>
+        <p style="margin:0; font-size:12px;">Enable Banking is the regulated open banking provider for EU banks. Sign up at <a href="https://enablebanking.com" target="_blank" style="color:var(--text); font-weight:600;">enablebanking.com</a> (free), register an application, and download the <code style="font-size:11px;">.pem</code> private key. The setup wizard guides you through the details.</p>
+      </div>
+      <label style="margin-top:0;">Private key file (.pem)</label>
+      <input type="file" name="pem_file" id="pem-file-input" accept=".pem" required onchange="autoFillAppId(this)">
+      <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">Stays on your server, never shared.</div>
+      <label>Application ID <span style="font-size:11px; font-weight:400; color:var(--hint);">(auto-filled from filename)</span></label>
+      <input type="text" name="eb_app_id" id="eb-app-id-input" value="{{ eb_app_id }}" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" required>
+      <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">Filled automatically from your .pem filename. From your <a href="https://enablebanking.com/" target="_blank" style="color:var(--muted);">Enable Banking dashboard</a> under Applications.</div>
+      <script>
+      function autoFillAppId(input) {
+        if (!input.files || !input.files[0]) return;
+        var filename = input.files[0].name;
+        var appId = filename.replace(/\.pem$/i, '');
+        if (appId.length === 36) {
+          document.getElementById('eb-app-id-input').value = appId;
+        }
+      }
+      </script>
+      <button class="btn btn-primary" type="submit">Upload key & continue &rarr;</button>
+    </form>
+    {% endif %}
+    </div>
+
+    <!-- US/Canada sub-panel -->
+    <div id="bank-region-na" {% if pem_ready %}style="display:none;"{% endif %}>
+    <form method="POST" action="/connect/simplefin/claim" id="simplefin-form">
+      <div style="font-size:13px; color:var(--muted); line-height:1.6; margin-bottom:1rem; padding:12px 14px; background:var(--surface); border:1px solid var(--border); border-radius:8px;">
+        <div style="font-weight:600; color:var(--text); margin-bottom:0.5rem;">How it works</div>
+        <ol style="margin:0; padding-left:1.2rem;">
+          <li style="margin-bottom:0.35rem;">Sign up at <a href="https://bridge.simplefin.org" target="_blank" style="color:var(--text); font-weight:600;">bridge.simplefin.org</a> ($15/year). <a href="https://beta-bridge.simplefin.org/info/institutions" target="_blank" style="color:var(--muted); font-size:11px;">Check supported banks first &rarr;</a></li>
+          <li style="margin-bottom:0.35rem;">Link your bank inside SimpleFIN's UI.</li>
+          <li style="margin-bottom:0.35rem;">Click <strong>Setup Token</strong> and copy the resulting code (a short text string, not a URL).</li>
+          <li>Paste it below and click Connect.</li>
+        </ol>
+      </div>
+      <label style="margin-top:0;">Start syncing from</label>
+      <input type="date" name="start_sync_date" id="sf-start-date-input" value="{{ today }}">
+      <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">Only transactions from this date forward will be imported.</div>
+      <label>SimpleFIN setup token</label>
+      <textarea name="simplefin_setup_token" id="sf-setup-token" rows="4" required oninput="updateSimplefinButton()" placeholder="Paste your one-time setup token here" style="width:100%; box-sizing:border-box; font-family:var(--mono); font-size:12px; resize:vertical;"></textarea>
+      <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">One-time use — paste exactly what bridge.simplefin.org gave you. Most major US and Canadian banks are supported.</div>
+      <button class="btn btn-primary" type="submit" id="sf-connect-btn" disabled style="background:var(--border); opacity:0.5;">Connect via SimpleFIN →</button>
+    </form>
+    </div>
+
     </div>
 
     {% if balance_providers %}
@@ -247,6 +317,40 @@
     if (dd && !dd.contains(e.target) && e.target.id !== 'bank-search') dd.style.display = 'none';
   });
   loadBanks();
+
+  // --- Bank region toggle (EU vs US/Canada) ---
+  function setRegion(region) {
+    var euDiv = document.getElementById('bank-region-eu');
+    var naDiv = document.getElementById('bank-region-na');
+    var euBtn = document.getElementById('region-eu-btn');
+    var naBtn = document.getElementById('region-na-btn');
+    if (!euDiv || !naDiv) return;
+    if (region === 'na') {
+      euDiv.style.display = 'none';
+      naDiv.style.display = 'block';
+      naBtn.style.background = '#37996b';
+      naBtn.style.color = '#fff';
+      euBtn.style.background = 'transparent';
+      euBtn.style.color = 'var(--muted)';
+    } else {
+      euDiv.style.display = 'block';
+      naDiv.style.display = 'none';
+      euBtn.style.background = '#37996b';
+      euBtn.style.color = '#fff';
+      naBtn.style.background = 'transparent';
+      naBtn.style.color = 'var(--muted)';
+    }
+  }
+
+  function updateSimplefinButton() {
+    var input = document.getElementById('sf-setup-token');
+    var btn = document.getElementById('sf-connect-btn');
+    if (!input || !btn) return;
+    var ready = input.value.trim().length > 0;
+    btn.disabled = !ready;
+    btn.style.background = ready ? '#37996b' : 'var(--border)';
+    btn.style.opacity = ready ? '1' : '0.5';
+  }
 
   // --- Mode toggle ---
   function setMode(mode) {
