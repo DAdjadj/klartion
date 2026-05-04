@@ -64,6 +64,17 @@ def start():
     tz_name = getattr(config, 'TIMEZONE', '') or ''
     schedule.clear()
 
+    # SimpleFIN's /accounts endpoint is capped at 24 requests per access URL
+    # per day. If any SimpleFIN tokens are connected, force the cadence to
+    # daily so manual frequencies of 6h or 12h don't burn that budget.
+    try:
+        has_simplefin = any(t.get("provider") == "simplefin" for t in db.get_all_tokens())
+    except Exception:
+        has_simplefin = False
+    if has_simplefin and 0 < frequency < 24:
+        logger.info("SimpleFIN tokens present, capping frequency at 24h (was %dh)", frequency)
+        frequency = 24
+
     logger.info("Scheduler starting. Sync at %s, every %dh, timezone %s",
                 sync_time, frequency, tz_name or "UTC")
 
