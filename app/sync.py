@@ -380,6 +380,8 @@ def _prefetch_simplefin_data(all_tokens: list) -> dict:
             safe_msg = simplefin.strip_credentials(str(e))
             logger.error("SimpleFIN prefetch failed for %s: %s", url_hash, safe_msg)
             results[url_hash] = {"ok": False, "error": "other", "msg": safe_msg}
+    if groups and len(results) == len(groups) and all(r.get("ok") for r in results.values()):
+        db.set_setting("simplefin_subscription_lapsed", "")
     return results
 
 
@@ -476,7 +478,13 @@ def _sync_simplefin_token(tokens: dict, category_rules: dict, sf_data: dict) -> 
             ):
                 errors.append(f"{bank_label}: {err.strip()[:200]}")
 
-    prefix = f"simplefin:{conn_id}:{account_id}:"
+    stored_namespace_conn_id = (tokens.get("provider_connection_id") or "").strip()
+    namespace_conn_id = stored_namespace_conn_id or db.get_simplefin_connection_id_from_transactions(account_id)
+    if not namespace_conn_id:
+        namespace_conn_id = conn_id
+    if namespace_conn_id and not stored_namespace_conn_id:
+        db.update_token_fields(token_id, provider_connection_id=namespace_conn_id)
+    prefix = f"simplefin:{namespace_conn_id}:{account_id}:"
 
     # Filter transactions to this token's date range — the prefetch may have
     # used a wider window covering a sibling token's earlier start date.
