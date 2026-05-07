@@ -21,6 +21,20 @@ def load_secret_key():
     import os
     app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-key")
 
+@app.before_request
+def capture_psu_signals():
+    """Record the user's IP and User-Agent on every UI request so that
+    background syncs can forward them as PSU-* headers to Enable Banking.
+    Comdirect (and other German ASPSPs) lift the 4-calls-per-day cap when
+    PSU headers are present."""
+    if not request.path.startswith("/api/") and not request.path.startswith("/static/"):
+        ip = request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip()
+        ua = (request.headers.get("User-Agent") or "")[:200]
+        if ip:
+            db.set_setting("psu_ip", ip)
+        if ua:
+            db.set_setting("psu_user_agent", ua)
+
 def _cfg():
     from .. import config
     return config
