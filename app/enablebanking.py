@@ -50,6 +50,16 @@ def _headers():
         "Content-Type": "application/json",
     }
 
+def _raise_with_body(resp, context: str) -> None:
+    """Like resp.raise_for_status(), but logs the response body first.
+    Enable Banking returns specific error codes (e.g. EXPIRED_SESSION) in the
+    JSON body that raise_for_status() would otherwise discard."""
+    if resp.ok:
+        return
+    body = (resp.text or "")[:1000]
+    logger.error("Enable Banking %s failed: HTTP %d — %s", context, resp.status_code, body)
+    resp.raise_for_status()
+
 def get_banks() -> list:
     resp = requests.get(f"{EB_BASE}/aspsps", headers=_headers(), timeout=15)
     resp.raise_for_status()
@@ -159,7 +169,7 @@ def get_transactions(session_id: str, account_uid: str, date_from: str, date_to:
                 time.sleep(wait)
                 continue
             break
-        resp.raise_for_status()
+        _raise_with_body(resp, f"GET /accounts/{account_uid}/transactions")
         data = resp.json()
         all_txns.extend(data.get("transactions", []))
         ck = data.get("continuation_key")
@@ -181,7 +191,7 @@ def get_balances(session_id: str, account_uid: str) -> list:
         headers=_headers(),
         timeout=15,
     )
-    resp.raise_for_status()
+    _raise_with_body(resp, f"GET /accounts/{account_uid}/balances")
     return resp.json().get("balances", [])
 
 
