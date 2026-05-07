@@ -279,6 +279,12 @@ def _sync_enablebanking_token(tokens: dict, category_rules: dict) -> tuple[int, 
     for tx in new_transactions:
         try:
             normalised = _normalise(tx, category_rules=category_rules)
+            if not normalised["date"]:
+                logger.warning(
+                    "Skipping transaction with no date (likely an unposted card pre-authorisation): %s",
+                    _get_tx_id(tx),
+                )
+                continue
             normalised["bank_name"] = tokens.get("bank_name", "")
             if current_balance is not None:
                 normalised["balance"] = current_balance
@@ -647,7 +653,7 @@ def _normalise(tx: dict, category_rules: dict = None) -> dict:
     else:
         category = bank_category or "Uncategorised"
 
-    date      = tx.get("booking_date") or tx.get("value_date") or ""
+    date      = tx.get("booking_date") or tx.get("value_date") or tx.get("transaction_date") or ""
     status    = "Cleared" if _is_booked_status(tx.get("status")) else "Pending"
 
     return {

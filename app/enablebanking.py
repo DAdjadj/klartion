@@ -44,11 +44,19 @@ def _make_jwt():
     }
     return pyjwt.encode(payload, private_key, algorithm="RS256", headers={"kid": _get_app_id()})
 
-def _headers():
-    return {
+def _headers(include_psu: bool = False):
+    h = {
         "Authorization": f"Bearer {_make_jwt()}",
         "Content-Type": "application/json",
     }
+    if include_psu:
+        psu_ip = db.get_setting("psu_ip") or ""
+        psu_ua = db.get_setting("psu_user_agent") or ""
+        if psu_ip:
+            h["Psu-Ip-Address"] = psu_ip
+        if psu_ua:
+            h["Psu-User-Agent"] = psu_ua
+    return h
 
 def _raise_with_body(resp, context: str) -> None:
     """Like resp.raise_for_status(), but logs the response body first.
@@ -162,7 +170,7 @@ def get_transactions(session_id: str, account_uid: str, date_from: str, date_to:
         if page > 0:
             time.sleep(1)
         for attempt in range(4):
-            resp = requests.get(url, headers=_headers(), params=params, timeout=30)
+            resp = requests.get(url, headers=_headers(include_psu=True), params=params, timeout=30)
             if resp.status_code == 429:
                 wait = min(2 ** attempt * 5, 60)
                 logger.warning("Rate limited (429), retrying in %ds (attempt %d/4)", wait, attempt + 1)
@@ -188,7 +196,7 @@ def get_balances(session_id: str, account_uid: str) -> list:
     """
     resp = requests.get(
         f"{EB_BASE}/accounts/{account_uid}/balances",
-        headers=_headers(),
+        headers=_headers(include_psu=True),
         timeout=15,
     )
     _raise_with_body(resp, f"GET /accounts/{account_uid}/balances")
