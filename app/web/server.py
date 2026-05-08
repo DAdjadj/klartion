@@ -27,13 +27,17 @@ def capture_psu_signals():
     background syncs can forward them as PSU-* headers to Enable Banking.
     Comdirect (and other German ASPSPs) lift the 4-calls-per-day cap when
     PSU headers are present."""
-    if not request.path.startswith("/api/") and not request.path.startswith("/static/"):
-        ip = request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip()
+    if not request.path.startswith("/static/"):
+        from datetime import datetime, timezone
+        ip = (request.headers.get("Cf-Connecting-Ip")
+              or request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0]).strip()
         ua = (request.headers.get("User-Agent") or "")[:200]
         if ip:
             db.set_setting("psu_ip", ip)
         if ua:
             db.set_setting("psu_user_agent", ua)
+        if ip or ua:
+            db.set_setting("psu_updated_at", datetime.now(timezone.utc).isoformat())
 
 def _cfg():
     from .. import config
