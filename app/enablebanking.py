@@ -188,6 +188,32 @@ def complete_auth(code: str, state: str) -> dict:
         "valid_until": valid_until,
     }
 
+def get_session_status(session_id: str) -> dict:
+    """Query Enable Banking's view of the session state without hitting the
+    bank. Returns the full session metadata (status, valid_until, accounts...)
+    or {"status": "ERROR", "error": "..."} on failure. Used as a diagnostic
+    probe before sync attempts so we can tell if a 400 from the bank is
+    session-level or request-level."""
+    try:
+        resp = requests.get(
+            f"{EB_BASE}/sessions/{session_id}",
+            headers=_headers(),
+            timeout=10,
+        )
+        if not resp.ok:
+            return {"status": "ERROR", "http": resp.status_code, "body": (resp.text or "")[:300]}
+        data = resp.json()
+        return {
+            "status": data.get("status"),
+            "authorized": data.get("authorized"),
+            "valid_until": (data.get("access") or {}).get("valid_until"),
+            "psu_type": data.get("psu_type"),
+            "created": data.get("created"),
+        }
+    except Exception as e:
+        return {"status": "ERROR", "error": str(e)[:200]}
+
+
 def get_accounts(session_id: str) -> list:
     resp = requests.get(
         f"{EB_BASE}/accounts",
