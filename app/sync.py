@@ -240,6 +240,8 @@ def _sync_enablebanking_token(tokens: dict, category_rules: dict) -> tuple[int, 
     date_to = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     logger.info("Syncing %s: %s to %s", bank_label, date_from, date_to)
+    session_state = enablebanking.get_session_status(session_id)
+    logger.info("EB session probe %s: %s", bank_label, session_state)
 
     try:
         all_transactions = enablebanking.get_transactions(session_id, account_uid, date_from, date_to)
