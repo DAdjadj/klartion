@@ -44,28 +44,69 @@ def _make_jwt():
     }
     return pyjwt.encode(payload, private_key, algorithm="RS256", headers={"kid": _get_app_id()})
 
+def _psu_signals() -> dict:
+    """Return PSU-* values currently stored, plus their freshness in seconds.
+    Returns {} if nothing has been captured yet."""
+    psu_ip = (db.get_setting("psu_ip") or "").strip()
+    psu_ua = (db.get_setting("psu_user_agent") or "").strip()
+    psu_updated_at = db.get_setting("psu_updated_at") or ""
+    age_seconds = None
+    if psu_updated_at:
+        try:
+            updated = datetime.fromisoformat(psu_updated_at.replace("Z", "+00:00"))
+            age_seconds = int((datetime.now(timezone.utc) - updated).total_seconds())
+        except Exception:
+            pass
+    return {"ip": psu_ip, "ua": psu_ua, "age_seconds": age_seconds}
+
 def _headers(include_psu: bool = False):
     h = {
         "Authorization": f"Bearer {_make_jwt()}",
         "Content-Type": "application/json",
     }
     if include_psu:
-        psu_ip = db.get_setting("psu_ip") or ""
-        psu_ua = db.get_setting("psu_user_agent") or ""
-        if psu_ip:
-            h["Psu-Ip-Address"] = psu_ip
-        if psu_ua:
-            h["Psu-User-Agent"] = psu_ua
+        psu = _psu_signals()
+        if psu["ip"]:
+            h["Psu-Ip-Address"] = psu["ip"]
+        if psu["ua"]:
+            h["Psu-User-Agent"] = psu["ua"]
     return h
+
+def _log_eb_request(method: str, path: str, *, session_id: str = "", account_uid: str = "", params: dict = None, with_psu: bool = False) -> None:
+    """Trace each Enable Banking call so failures can be reproduced from logs.
+    Includes session_id and account_uid for correlating with the Enable Banking
+    control panel request log."""
+    psu_summary = "off"
+    if with_psu:
+        psu = _psu_signals()
+        if psu["ip"] or psu["ua"]:
+            age = f"{psu['age_seconds']}s" if psu["age_seconds"] is not None else "?"
+            psu_summary = f"ip={psu['ip'] or '<empty>'} ua_len={len(psu['ua'])} age={age}"
+        else:
+            psu_summary = "requested-but-empty"
+    logger.info(
+        "EB %s %s session=%s account=%s params=%s psu=%s",
+        method, path,
+        session_id or "<none>",
+        account_uid or "<none>",
+        params or {},
+        psu_summary,
+    )
 
 def _raise_with_body(resp, context: str) -> None:
     """Like resp.raise_for_status(), but logs the response body first.
     Enable Banking returns specific error codes (e.g. EXPIRED_SESSION) in the
-    JSON body that raise_for_status() would otherwise discard."""
+    JSON body that raise_for_status() would otherwise discard. Also logs the
+    Enable Banking request ID header (when present) so the matching entry
+    can be found in the EB control panel."""
     if resp.ok:
         return
     body = (resp.text or "")[:1000]
-    logger.error("Enable Banking %s failed: HTTP %d — %s", context, resp.status_code, body)
+    eb_req_id = resp.headers.get("X-Request-Id") or resp.headers.get("Request-Id") or "<none>"
+    logger.error(
+        "Enable Banking %s failed: HTTP %d eb_request_id=%s body=%s",
+        context, resp.status_code, eb_req_id, body,
+    )
     resp.raise_for_status()
 
 def get_banks() -> list:
@@ -169,6 +210,7 @@ def get_transactions(session_id: str, account_uid: str, date_from: str, date_to:
     while url:
         if page > 0:
             time.sleep(1)
+        _log_eb_request("GET", f"/accounts/{account_uid}/transactions", session_id=session_id, account_uid=account_uid, params=params, with_psu=True)
         for attempt in range(4):
             resp = requests.get(url, headers=_headers(include_psu=True), params=params, timeout=30)
             if resp.status_code == 429:
@@ -194,6 +236,7 @@ def get_balances(session_id: str, account_uid: str) -> list:
     Fetch balances for an account by UID.
     Returns a list of balance objects from Enable Banking.
     """
+    _log_eb_request("GET", f"/accounts/{account_uid}/balances", session_id=session_id, account_uid=account_uid, with_psu=True)
     resp = requests.get(
         f"{EB_BASE}/accounts/{account_uid}/balances",
         headers=_headers(include_psu=True),
