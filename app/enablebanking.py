@@ -156,9 +156,11 @@ def _raise_with_body(resp, context: str) -> None:
         return
     body = (resp.text or "")[:1000]
     eb_req_id = resp.headers.get("X-Request-Id") or resp.headers.get("Request-Id") or "<none>"
+    # Log all response headers on failure — may contain diagnostic info
+    resp_headers = {k: v for k, v in resp.headers.items()}
     logger.error(
-        "Enable Banking %s failed: HTTP %d eb_request_id=%s body=%s",
-        context, resp.status_code, eb_req_id, body,
+        "Enable Banking %s failed: HTTP %d eb_request_id=%s headers=%s body=%s",
+        context, resp.status_code, eb_req_id, resp_headers, body,
     )
     resp.raise_for_status()
 
@@ -290,8 +292,12 @@ def get_transactions(session_id: str, account_uid: str, date_from: str, date_to:
         if page > 0:
             time.sleep(1)
         _log_eb_request("GET", f"/accounts/{account_uid}/transactions", session_id=session_id, account_uid=account_uid, params=params, with_psu=True)
+        req_headers = _headers(include_psu=True)
+        # Log actual outgoing headers (redact JWT for brevity)
+        safe_headers = {k: (v[:30] + "...") if k == "Authorization" else v for k, v in req_headers.items()}
+        logger.info("Outgoing request headers: %s", safe_headers)
         for attempt in range(4):
-            resp = requests.get(url, headers=_headers(include_psu=True), params=params, timeout=30)
+            resp = requests.get(url, headers=req_headers, params=params, timeout=30)
             if resp.status_code == 429:
                 wait = min(2 ** attempt * 5, 60)
                 logger.warning("Rate limited (429), retrying in %ds (attempt %d/4)", wait, attempt + 1)
@@ -316,9 +322,12 @@ def get_balances(session_id: str, account_uid: str) -> list:
     Returns a list of balance objects from Enable Banking.
     """
     _log_eb_request("GET", f"/accounts/{account_uid}/balances", session_id=session_id, account_uid=account_uid, with_psu=True)
+    req_headers = _headers(include_psu=True)
+    safe_headers = {k: (v[:30] + "...") if k == "Authorization" else v for k, v in req_headers.items()}
+    logger.info("Outgoing request headers: %s", safe_headers)
     resp = requests.get(
         f"{EB_BASE}/accounts/{account_uid}/balances",
-        headers=_headers(include_psu=True),
+        headers=req_headers,
         timeout=15,
     )
     _raise_with_body(resp, f"GET /accounts/{account_uid}/balances")

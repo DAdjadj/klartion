@@ -21,7 +21,7 @@ def _should_catchup(frequency_hours) -> bool:
 
 def _run_sync():
     logger.info("Scheduled sync triggered at %s", datetime.now().isoformat())
-    sync.run()
+    sync.run(trigger="scheduled")
 
 def _parse_time(time_str):
     """Parse HH:MM string into hours and minutes."""
@@ -96,7 +96,7 @@ def start():
 
     if frequency > 0 and _should_catchup(frequency):
         logger.info("Catch-up sync needed. Running now.")
-        threading.Thread(target=sync.run, daemon=True).start()
+        threading.Thread(target=sync.run, kwargs={"trigger": "catch-up"}, daemon=True).start()
 
     if not _started:
         _started = True
