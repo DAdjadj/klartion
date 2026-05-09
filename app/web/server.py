@@ -26,17 +26,34 @@ def capture_psu_signals():
     """Record the user's IP and User-Agent on every UI request so that
     background syncs can forward them as PSU-* headers to Enable Banking.
     Comdirect (and other German ASPSPs) lift the 4-calls-per-day cap when
-    PSU headers are present."""
+    PSU headers are present.
+
+    Only public, routable IPs are stored — private Docker-bridge IPs like
+    192.168.65.1 would be rejected by the bank, causing it to treat the
+    access as unattended and enforce the PSD2 4-call daily limit."""
     if not request.path.startswith("/static/"):
+        import ipaddress
         from datetime import datetime, timezone
-        ip = (request.headers.get("Cf-Connecting-Ip")
-              or request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0]).strip()
+        raw_cf  = request.headers.get("Cf-Connecting-Ip") or ""
+        raw_xff = request.headers.get("X-Forwarded-For") or ""
+        raw_ra  = request.remote_addr or ""
+        ip = (raw_cf or raw_xff.split(",")[0] or raw_ra).strip()
         ua = (request.headers.get("User-Agent") or "")[:200]
+        # Reject private / non-routable IPs — they mislead the bank
+        ip_is_public = False
         if ip:
+            try:
+                addr = ipaddress.ip_address(ip)
+                ip_is_public = not (addr.is_private or addr.is_loopback or addr.is_link_local)
+            except ValueError:
+                pass
+        if ip_is_public:
             db.set_setting("psu_ip", ip)
+            logger.info("PSU capture: stored public IP %s (src: %s)",
+                        ip, "CF" if raw_cf else ("XFF" if raw_xff else "remote"))
         if ua:
             db.set_setting("psu_user_agent", ua)
-        if ip or ua:
+        if ip_is_public or ua:
             db.set_setting("psu_updated_at", datetime.now(timezone.utc).isoformat())
 
 def _cfg():
