@@ -16,7 +16,7 @@ def _is_booked_status(status: str) -> bool:
 def _scoped_tx_id(account_uid: str, tx: dict) -> str:
     return f"{account_uid}:{_get_tx_id(tx)}"
 
-def run():
+def run(trigger: str = "unknown"):
     """
     Main sync orchestrator. Called by the scheduler daily.
     Uses a lock to prevent duplicate concurrent syncs (e.g. catch-up + post-auth
@@ -24,17 +24,17 @@ def run():
     Returns (success: bool, tx_count: int, message: str)
     """
     if not _sync_lock.acquire(blocking=False):
-        logger.info("Sync already in progress, skipping duplicate run.")
+        logger.info("Sync already in progress, skipping duplicate run. (trigger=%s)", trigger)
         return True, 0, "Skipped (already running)"
     try:
-        return _run_impl()
+        return _run_impl(trigger)
     finally:
         _sync_lock.release()
 
 
-def _run_impl():
+def _run_impl(trigger: str):
     """Internal sync implementation — callers must hold _sync_lock."""
-    logger.info("Starting sync run...")
+    logger.info("Starting sync run... (trigger=%s)", trigger)
 
     # 1. Licence check
     result = licence.validate()
@@ -258,6 +258,15 @@ def _sync_enablebanking_token(tokens: dict, category_rules: dict) -> tuple[int, 
     logger.info("Syncing %s: %s to %s", bank_label, date_from, date_to)
     session_state = enablebanking.get_session_status(session_id)
     logger.info("EB session probe %s: %s", bank_label, session_state)
+    # Log time since authorization — key diagnostic for Comdirect failures
+    auth_time_str = session_state.get("authorized") or ""
+    if auth_time_str:
+        try:
+            auth_dt = datetime.fromisoformat(auth_time_str.replace("Z", "+00:00"))
+            secs_since_auth = int((datetime.now(timezone.utc) - auth_dt).total_seconds())
+            logger.info("Time since authorization: %ds (%dm %ds)", secs_since_auth, secs_since_auth // 60, secs_since_auth % 60)
+        except Exception:
+            pass
 
     try:
         all_transactions = enablebanking.get_transactions(session_id, account_uid, date_from, date_to)

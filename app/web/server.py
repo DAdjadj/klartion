@@ -499,7 +499,7 @@ def connect():
                     else:
                         _start_scheduler_if_ready()
                         import threading
-                        threading.Thread(target=sync.run, daemon=True).start()
+                        threading.Thread(target=sync.run, kwargs={"trigger": "post-auth"}, daemon=True).start()
                         return redirect(url_for("connect", success=1))
 
         elif action == "cancel":
@@ -665,7 +665,7 @@ def _finalize_bank_connection(result, account_uid):
     db.set_setting("pending_reauth_token_id", "")
     _start_scheduler_if_ready()
     import threading
-    threading.Thread(target=sync.run, daemon=True).start()
+    threading.Thread(target=sync.run, kwargs={"trigger": "post-auth"}, daemon=True).start()
 
 @app.route("/callback")
 def callback():
@@ -1020,7 +1020,7 @@ def _finalize_simplefin_connection():
 
     _start_scheduler_if_ready()
     import threading
-    threading.Thread(target=sync.run, daemon=True).start()
+    threading.Thread(target=sync.run, kwargs={"trigger": "post-auth"}, daemon=True).start()
     return redirect(url_for("status", success=1))
 
 @app.route("/status")
@@ -1167,7 +1167,7 @@ def sync_now():
     def _run():
         global _sync_running
         try:
-            sync.run()
+            sync.run(trigger="manual")
         finally:
             _sync_running = False
     threading.Thread(target=_run, daemon=True).start()
