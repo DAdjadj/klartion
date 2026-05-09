@@ -1,11 +1,14 @@
 import hashlib
 import logging
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from . import config, db, enablebanking, notion, email_notify, licence, crypto, simplefin
 
 logger = logging.getLogger(__name__)
+
+_sync_lock = threading.Lock()
 
 def _is_booked_status(status: str) -> bool:
     return (status or "").upper() in {"BOOK", "BOOKED"}
@@ -16,8 +19,21 @@ def _scoped_tx_id(account_uid: str, tx: dict) -> str:
 def run():
     """
     Main sync orchestrator. Called by the scheduler daily.
+    Uses a lock to prevent duplicate concurrent syncs (e.g. catch-up + post-auth
+    sync both firing at the same time, which wastes Enable Banking API calls).
     Returns (success: bool, tx_count: int, message: str)
     """
+    if not _sync_lock.acquire(blocking=False):
+        logger.info("Sync already in progress, skipping duplicate run.")
+        return True, 0, "Skipped (already running)"
+    try:
+        return _run_impl()
+    finally:
+        _sync_lock.release()
+
+
+def _run_impl():
+    """Internal sync implementation — callers must hold _sync_lock."""
     logger.info("Starting sync run...")
 
     # 1. Licence check
