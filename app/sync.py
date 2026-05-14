@@ -281,7 +281,22 @@ def _sync_enablebanking_token(tokens: dict, category_rules: dict) -> tuple[int, 
 
     tx_prefix = f"{account_uid}:"
     known_ids = db.get_known_tx_ids(tx_id_prefix=tx_prefix)
-    new_transactions = [t for t in all_transactions if _scoped_tx_id(account_uid, t) not in known_ids]
+    # Re-authorization gives a new account_uid, which changes the scoped prefix.
+    # Also check raw tx_ids across all EB transactions so previously-synced
+    # transactions aren't re-imported as duplicates.
+    all_known = db.get_known_tx_ids()
+    known_raw_tx_ids = set()
+    for kid in all_known:
+        if kid.startswith(("simplefin:", "provider:")):
+            continue
+        colon = kid.find(":")
+        if colon > 0:
+            known_raw_tx_ids.add(kid[colon + 1:])
+    new_transactions = [
+        t for t in all_transactions
+        if _scoped_tx_id(account_uid, t) not in known_ids
+        and _get_tx_id(t) not in known_raw_tx_ids
+    ]
     if tokens.get("skip_pending"):
         before = len(new_transactions)
         new_transactions = [t for t in new_transactions if _is_booked_status(t.get("status"))]

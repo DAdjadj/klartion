@@ -297,7 +297,15 @@ def get_transactions(session_id: str, account_uid: str, date_from: str, date_to:
         safe_headers = {k: (v[:30] + "...") if k == "Authorization" else v for k, v in req_headers.items()}
         logger.info("Outgoing request headers: %s", safe_headers)
         for attempt in range(4):
-            resp = requests.get(url, headers=req_headers, params=params, timeout=30)
+            try:
+                resp = requests.get(url, headers=req_headers, params=params, timeout=30)
+            except (requests.ConnectionError, requests.Timeout) as e:
+                if attempt < 3:
+                    wait = min(2 ** attempt * 5, 60)
+                    logger.warning("Connection error, retrying in %ds (attempt %d/4): %s", wait, attempt + 1, e)
+                    time.sleep(wait)
+                    continue
+                raise
             if resp.status_code == 429:
                 wait = min(2 ** attempt * 5, 60)
                 logger.warning("Rate limited (429), retrying in %ds (attempt %d/4)", wait, attempt + 1)
@@ -325,11 +333,21 @@ def get_balances(session_id: str, account_uid: str) -> list:
     req_headers = _headers(include_psu=True)
     safe_headers = {k: (v[:30] + "...") if k == "Authorization" else v for k, v in req_headers.items()}
     logger.info("Outgoing request headers: %s", safe_headers)
-    resp = requests.get(
-        f"{EB_BASE}/accounts/{account_uid}/balances",
-        headers=req_headers,
-        timeout=15,
-    )
+    for attempt in range(3):
+        try:
+            resp = requests.get(
+                f"{EB_BASE}/accounts/{account_uid}/balances",
+                headers=req_headers,
+                timeout=15,
+            )
+            break
+        except (requests.ConnectionError, requests.Timeout) as e:
+            if attempt < 2:
+                wait = min(2 ** attempt * 5, 30)
+                logger.warning("Balance connection error, retrying in %ds (attempt %d/3): %s", wait, attempt + 1, e)
+                time.sleep(wait)
+                continue
+            raise
     _raise_with_body(resp, f"GET /accounts/{account_uid}/balances")
     return resp.json().get("balances", [])
 
