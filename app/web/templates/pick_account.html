@@ -12,33 +12,45 @@
 {% endblock %}
 {% block content %}
 <div class="card">
-  <div class="card-title">Choose an account</div>
-  <div class="card-sub">Your bank returned multiple accounts. Select the one you want to sync.</div>
+  <div class="card-title">Choose {% if is_reauth %}an account{% else %}accounts{% endif %}</div>
+  <div class="card-sub">
+    {% if is_reauth %}
+      Select the account to reconnect.
+    {% else %}
+      Your bank returned multiple accounts. Tick every account or card you want to sync — each is added separately and tagged with its own name in the Notion "Bank" column.
+    {% endif %}
+  </div>
+
+  {% if error %}
+    <div class="alert alert-error" style="margin:1rem 0;">{{ error }}</div>
+  {% endif %}
 
   <form method="POST" action="/pick-account">
-    <div style="display:flex; flex-direction:column; gap:0.5rem; margin:1rem 0;">
+    {% if not is_reauth and accounts|length > 1 %}
+    <label style="display:flex; align-items:center; gap:8px; margin:1rem 0 0; font-size:12px; color:var(--muted); cursor:pointer;">
+      <input type="checkbox" onclick="var s=this.checked;document.querySelectorAll('input[name=account_uid]').forEach(function(c){c.checked=s});" style="accent-color:var(--text); width:15px; height:15px;">
+      Select all
+    </label>
+    {% endif %}
+    <div style="display:flex; flex-direction:column; gap:0.5rem; margin:0.75rem 0 1rem;">
       {% for account in accounts %}
       <label style="display:flex; align-items:center; gap:10px; padding:12px 14px; border:1px solid var(--border); border-radius:8px; cursor:pointer; transition:border-color 0.15s;" onmouseover="this.style.borderColor='var(--muted)'" onmouseout="if(!this.querySelector('input').checked) this.style.borderColor='var(--border)'">
-        <input type="radio" name="account_uid" value="{{ account.uid or account.account_uid or account.resource_id or '' }}" {% if loop.first %}checked{% endif %} style="accent-color:var(--text); width:16px; height:16px; flex-shrink:0;">
-        <div style="min-width:0;">
-          {% if account.iban %}
+        <input type="{{ 'radio' if is_reauth else 'checkbox' }}" name="account_uid" value="{{ account.uid }}" {% if is_reauth and loop.first %}checked{% endif %} style="accent-color:var(--text); width:16px; height:16px; flex-shrink:0;">
+        <div style="min-width:0; flex:1;">
           <div style="font-family:var(--mono); font-size:13px; color:var(--text); letter-spacing:0.5px;">
-            {{ account.iban[:4] }} **** **** {{ account.iban[-4:] }}
+            {{ account.label }}
+            {% if account.currency %}<span style="margin-left:6px; padding:1px 5px; background:var(--surface); border:1px solid var(--border); border-radius:3px; font-size:10px; font-family:inherit;">{{ account.currency }}</span>{% endif %}
+          </div>
+          {% if account.holder or account.product %}
+          <div style="font-size:11px; color:var(--muted); margin-top:2px;">
+            {{ account.holder }}{% if account.holder and account.product %} · {% endif %}{{ account.product }}
           </div>
           {% endif %}
-          <div style="font-size:11px; color:var(--muted); margin-top:2px;">
-            {% if account.name %}{{ account.name }}{% endif %}
-            {% if account.currency %}<span style="margin-left:4px; padding:1px 5px; background:var(--surface); border:1px solid var(--border); border-radius:3px; font-size:10px;">{{ account.currency }}</span>{% endif %}
-            {% if account.product %}{{ account.product }}{% endif %}
-            {% if not account.iban and not account.name and not account.product %}
-              Account {{ loop.index }} &mdash; {{ account.uid or account.account_uid or account.resource_id or 'unknown' }}
-            {% endif %}
-          </div>
         </div>
       </label>
       {% endfor %}
     </div>
-    <button class="btn btn-primary" type="submit">Connect this account</button>
+    <button class="btn btn-primary" type="submit">Connect {% if is_reauth %}this account{% else %}selected accounts{% endif %}</button>
   </form>
 </div>
 {% endblock %}

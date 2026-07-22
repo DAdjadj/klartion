@@ -99,8 +99,13 @@ def _ensure_global_bank_capacity(tokens, new_seats=1):
         return result.get("error") or "Bank account limit reached for this licence."
     used = int(result.get("used") or 0)
     limit = int(result.get("limit") or _get_bank_account_limit())
-    if used + new_seats > limit:
-        return f"Bank account limit reached ({limit}). Disconnect a bank on another machine or add another bank slot before connecting a new one."
+    available = max(0, limit - used)
+    if new_seats > available:
+        if new_seats > 1:
+            return (f"You selected {new_seats} accounts but only {available} of your {limit} "
+                    f"bank slots are free. Deselect some, or add more slots on the status page.")
+        return (f"Bank account limit reached ({used}/{limit} slots in use). Disconnect a bank on "
+                f"another machine, or add another bank slot before connecting a new one.")
     return None
 
 def _claim_bank_seat(token):
@@ -625,8 +630,12 @@ def reauthorise():
         active="bank",
     )
 
-def _finalize_bank_connection(result, account_uid):
-    """Save bank tokens, clear pending settings, start scheduler and sync."""
+def _finalize_bank_connection(result, account_uid, check_capacity=True, run_sync=True):
+    """Save bank tokens, clear pending settings, start scheduler and sync.
+
+    When connecting several accounts from one authorisation, the caller checks
+    capacity once for the whole batch and triggers a single sync at the end —
+    pass check_capacity=False and run_sync=False in that case."""
     reauth_token_id = (db.get_setting("pending_reauth_token_id") or "").strip()
     if reauth_token_id:
         token_id = int(reauth_token_id)
@@ -640,9 +649,10 @@ def _finalize_bank_connection(result, account_uid):
         )
     else:
         start_sync_date = db.get_setting("pending_start_sync_date") or ""
-        capacity_error = _ensure_global_bank_capacity(db.get_all_tokens(), new_seats=1)
-        if capacity_error:
-            raise ValueError(capacity_error)
+        if check_capacity:
+            capacity_error = _ensure_global_bank_capacity(db.get_all_tokens(), new_seats=1)
+            if capacity_error:
+                raise ValueError(capacity_error)
         token_id = db.save_tokens(
             session_id=result["session_id"],
             access_token=account_uid,
@@ -663,9 +673,10 @@ def _finalize_bank_connection(result, account_uid):
     db.set_setting("pending_valid_until", "")
     db.set_setting("pending_start_sync_date", "")
     db.set_setting("pending_reauth_token_id", "")
-    _start_scheduler_if_ready()
-    import threading
-    threading.Thread(target=sync.run, kwargs={"trigger": "post-auth"}, daemon=True).start()
+    if run_sync:
+        _start_scheduler_if_ready()
+        import threading
+        threading.Thread(target=sync.run, kwargs={"trigger": "post-auth"}, daemon=True).start()
 
 @app.route("/callback")
 def callback():
@@ -719,34 +730,88 @@ def pick_account():
     accounts_json = db.get_setting("pending_auth_accounts")
     if not accounts_json:
         return redirect(url_for("connect"))
-    accounts = json.loads(accounts_json)
-    return render_template("pick_account.html", accounts=accounts, error=error, active="pick-account")
+    raw_accounts = json.loads(accounts_json)
+    bank_name = db.get_setting("pending_auth_bank_name") or db.get_setting("pending_bank_name") or ""
+    accounts = [
+        {
+            "uid": enablebanking.extract_account_uid(a),
+            "label": enablebanking.account_display_label(a),
+            "holder": a.get("name") or "",
+            "currency": a.get("currency") or "",
+            "product": a.get("product") or "",
+        }
+        for a in raw_accounts
+    ]
+    is_reauth = bool((db.get_setting("pending_reauth_token_id") or "").strip())
+    return render_template(
+        "pick_account.html",
+        accounts=accounts,
+        bank_name=bank_name,
+        is_reauth=is_reauth,
+        error=error,
+        active="pick-account",
+    )
 
 @app.route("/pick-account", methods=["POST"])
 def pick_account_post():
     if db.get_setting("pending_simplefin_access_url"):
         return _finalize_simplefin_connection()
 
-    account_uid = request.form.get("account_uid")
-    if not account_uid:
-        return redirect(url_for("pick_account"))
+    import json
+    account_uids = [u for u in dict.fromkeys(request.form.getlist("account_uid")) if u]
+    if not account_uids:
+        return redirect(url_for("pick_account") + "?error=Select at least one account to sync.")
+
     session_id   = db.get_setting("pending_auth_session_id")
     valid_until  = db.get_setting("pending_auth_valid_until")
-    bank_name    = db.get_setting("pending_auth_bank_name") or db.get_setting("pending_bank_name")
-    bank_country = db.get_setting("pending_auth_bank_country") or db.get_setting("pending_bank_country")
-    result = {
-        "session_id": session_id,
-        "bank_name": bank_name,
-        "bank_country": bank_country,
-        "valid_until": valid_until,
-    }
-    try:
-        _finalize_bank_connection(result, account_uid)
-    except Exception as e:
-        return redirect(url_for("connect") + "?error=" + str(e))
+    bank_name    = db.get_setting("pending_auth_bank_name") or db.get_setting("pending_bank_name") or ""
+    bank_country = db.get_setting("pending_auth_bank_country") or db.get_setting("pending_bank_country") or ""
+
+    raw_accounts = json.loads(db.get_setting("pending_auth_accounts") or "[]")
+    by_uid = {enablebanking.extract_account_uid(a): a for a in raw_accounts}
+
+    # A re-authorisation replaces one existing token — never fan out.
+    is_reauth = bool((db.get_setting("pending_reauth_token_id") or "").strip())
+    if is_reauth:
+        account_uids = account_uids[:1]
+
+    def _account_bank_name(uid):
+        acc = by_uid.get(uid)
+        label = enablebanking.account_display_label(acc) if acc else ""
+        return f"{bank_name} · {label}" if label else bank_name
+
+    # Reserve capacity for the whole batch up front so we don't half-connect.
+    if not is_reauth:
+        capacity_error = _ensure_global_bank_capacity(db.get_all_tokens(), new_seats=len(account_uids))
+        if capacity_error:
+            return redirect(url_for("pick_account") + "?error=" + capacity_error)
+
+    saved = 0
+    last_error = None
+    for uid in account_uids:
+        result = {
+            "session_id": session_id,
+            "bank_name": _account_bank_name(uid),
+            "bank_country": bank_country,
+            "valid_until": valid_until,
+        }
+        try:
+            _finalize_bank_connection(result, uid, check_capacity=False, run_sync=False)
+            saved += 1
+        except Exception as e:
+            last_error = str(e)
+            logger.error("Failed to connect account %s: %s", uid, e)
+
+    if saved == 0:
+        return redirect(url_for("connect") + "?error=" + (last_error or "Could not connect the selected accounts."))
+
     for key in ["pending_auth_session_id", "pending_auth_accounts", "pending_auth_valid_until",
                 "pending_auth_bank_name", "pending_auth_bank_country"]:
         db.set_setting(key, "")
+
+    _start_scheduler_if_ready()
+    import threading
+    threading.Thread(target=sync.run, kwargs={"trigger": "post-auth"}, daemon=True).start()
     return redirect(url_for("status"))
 
 

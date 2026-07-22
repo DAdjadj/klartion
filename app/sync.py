@@ -292,11 +292,21 @@ def _sync_enablebanking_token(tokens: dict, category_rules: dict) -> tuple[int, 
         colon = kid.find(":")
         if colon > 0:
             known_raw_tx_ids.add(kid[colon + 1:])
-    new_transactions = [
-        t for t in all_transactions
-        if _scoped_tx_id(account_uid, t) not in known_ids
-        and _get_tx_id(t) not in known_raw_tx_ids
-    ]
+
+    def _already_known(t: dict) -> bool:
+        # Primary key is the content fingerprint (stable across pending->booked
+        # and across re-auth). Legacy keys are still checked so transactions
+        # imported before this change are not re-imported as duplicates.
+        canonical = _canonical_tx_id(t)
+        legacy = _get_tx_id(t)
+        return (
+            f"{account_uid}:{canonical}" in known_ids
+            or canonical in known_raw_tx_ids
+            or f"{account_uid}:{legacy}" in known_ids
+            or legacy in known_raw_tx_ids
+        )
+
+    new_transactions = [t for t in all_transactions if not _already_known(t)]
     if tokens.get("skip_pending"):
         before = len(new_transactions)
         new_transactions = [t for t in new_transactions if _is_booked_status(t.get("status"))]
@@ -332,7 +342,7 @@ def _sync_enablebanking_token(tokens: dict, category_rules: dict) -> tuple[int, 
                 normalised["balance"] = current_balance
             notion_page_id = notion.write_transaction(normalised)
             db.upsert_transaction(
-                tx_id=_scoped_tx_id(account_uid, tx),
+                tx_id=_scoped_canonical_tx_id(account_uid, tx),
                 notion_page_id=notion_page_id,
                 status=normalised["status"].lower(),
             )
@@ -627,8 +637,15 @@ def _reconcile_pending(account_uid: str, all_transactions: list):
     if not pending:
         return
 
-    booked_ids  = {_scoped_tx_id(account_uid, t) for t in all_transactions if _is_booked_status(t.get("status"))}
-    fetched_ids = {_scoped_tx_id(account_uid, t) for t in all_transactions}
+    # Match pending rows stored under either the new fingerprint key or the
+    # legacy id, so reconciliation keeps working across the id-scheme change.
+    booked_ids = set()
+    fetched_ids = set()
+    for t in all_transactions:
+        ids = (_scoped_canonical_tx_id(account_uid, t), _scoped_tx_id(account_uid, t))
+        fetched_ids.update(ids)
+        if _is_booked_status(t.get("status")):
+            booked_ids.update(ids)
 
     for record in pending:
         tx_id          = record["tx_id"]
@@ -655,6 +672,69 @@ def _get_tx_id(tx: dict) -> str:
     )
 
 
+def _display_tx_id(tx: dict) -> str:
+    """The id shown in Notion's "Transaction ID" column. Use the bank's own
+    stable reference when present; otherwise leave it blank rather than
+    synthesising a date+amount string, which looked inconsistent to users and
+    changed once the transaction booked."""
+    return tx.get("transaction_id") or tx.get("entry_reference") or ""
+
+
+def _tx_date(tx: dict) -> str:
+    """When the transaction actually happened. Enable Banking's
+    transaction_date is the purchase/operation date; booking_date is when the
+    bank posted it (often a day or two later, or effectively 'today' for a
+    freshly-posted batch), which is why card transactions were all landing on
+    today's date. Prefer the real transaction date, then value, then booking."""
+    return tx.get("transaction_date") or tx.get("value_date") or tx.get("booking_date") or ""
+
+
+def _counterparty_name(tx: dict) -> str:
+    """Merchant (for debits) or sender (for credits), with remittance fallback."""
+    indicator = tx.get("credit_debit_indicator", "DBIT")
+    if indicator == "DBIT":
+        party = (tx.get("creditor") or {}).get("name") or tx.get("creditor_name")
+    else:
+        party = (tx.get("debtor") or {}).get("name") or tx.get("debtor_name")
+    return (
+        party
+        or (tx.get("remittance_information") or [None])[0]
+        or tx.get("remittance_information_unstructured")
+        or "Unknown"
+    )
+
+
+def _content_fingerprint(tx: dict) -> str:
+    """Stable dedup identity that does NOT change between a transaction's
+    pending and booked states, nor when the bank omits its reference on some
+    fetches. Novo Banco returns the same purchase once with a 12-digit
+    reference and once without (falling back to a date+amount id), and the old
+    scheme treated those as two different rows — the duplicates users saw.
+    Keying on the transaction's own content collapses them to one.
+
+    Trade-off: two genuinely distinct transactions sharing an identical date,
+    amount, currency, direction and counterparty hash to the same id and the
+    later one is skipped. That is rarer than the old date+amount collision,
+    which ignored the counterparty entirely."""
+    amount_obj = tx.get("transaction_amount") or {}
+    parts = [
+        _tx_date(tx),
+        str(amount_obj.get("amount", "")),
+        (amount_obj.get("currency", "") or "").upper(),
+        tx.get("credit_debit_indicator", "") or "",
+        _counterparty_name(tx).strip().lower(),
+    ]
+    return "fp_" + hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:20]
+
+
+def _canonical_tx_id(tx: dict) -> str:
+    return _content_fingerprint(tx)
+
+
+def _scoped_canonical_tx_id(account_uid: str, tx: dict) -> str:
+    return f"{account_uid}:{_canonical_tx_id(tx)}"
+
+
 def _normalise(tx: dict, category_rules: dict = None) -> dict:
     """
     Normalise an Enable Banking transaction into Klartion's internal format.
@@ -667,23 +747,7 @@ def _normalise(tx: dict, category_rules: dict = None) -> dict:
     amount     = abs(amount)
 
     # Direction: DBIT = debit (money out), CRDT = credit (money in)
-    indicator = tx.get("credit_debit_indicator", "DBIT")
-    if indicator == "DBIT":
-        merchant = (
-            (tx.get("creditor") or {}).get("name")
-            or tx.get("creditor_name")
-            or (tx.get("remittance_information") or [None])[0]
-            or tx.get("remittance_information_unstructured")
-            or "Unknown"
-        )
-    else:
-        merchant = (
-            (tx.get("debtor") or {}).get("name")
-            or tx.get("debtor_name")
-            or (tx.get("remittance_information") or [None])[0]
-            or tx.get("remittance_information_unstructured")
-            or "Unknown"
-        )
+    merchant = _counterparty_name(tx)
 
     reference = tx.get("remittance_information_unstructured") or tx.get("end_to_end_id") or ""
     bank_category = (tx.get("bank_transaction_code") or {}).get("code") or tx.get("proprietary_bank_transaction_code") or ""
@@ -695,11 +759,11 @@ def _normalise(tx: dict, category_rules: dict = None) -> dict:
     else:
         category = bank_category or "Uncategorised"
 
-    date      = tx.get("booking_date") or tx.get("value_date") or tx.get("transaction_date") or ""
+    date      = _tx_date(tx)
     status    = "Cleared" if _is_booked_status(tx.get("status")) else "Pending"
 
     return {
-        "tx_id":     _get_tx_id(tx),
+        "tx_id":     _display_tx_id(tx),
         "date":      date,
         "amount":    amount,
         "currency":  currency,
