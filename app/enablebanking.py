@@ -208,6 +208,80 @@ def start_auth(bank_name: str, bank_country: str) -> dict:
 def extract_account_uid(account):
     return account.get("uid") or account.get("account_uid") or account.get("resource_id") or ""
 
+
+def _mask_tail(value: str, keep: int = 4) -> str:
+    """Return a masked tail like '····6170' from an IBAN or card number."""
+    alnum = "".join(ch for ch in str(value) if ch.isalnum())
+    if not alnum:
+        return ""
+    if len(alnum) <= keep:
+        return alnum
+    return "····" + alnum[-keep:]
+
+
+def account_identifiers(account: dict) -> dict:
+    """Pull the distinguishing identifier(s) out of an Enable Banking account.
+
+    Enable Banking nests the IBAN under account_id.iban and card numbers under
+    account_id.other / all_account_ids (scheme_name 'CPAN'). The top-level
+    'iban' key the picker looked for never exists, which is why every account
+    of the same company rendered as just the holder name. Read every known
+    location defensively and return {'iban', 'other', 'other_scheme'}."""
+    acc_id = account.get("account_id") or {}
+    iban = ""
+    other_ident = ""
+    other_scheme = ""
+    if isinstance(acc_id, dict):
+        iban = acc_id.get("iban") or ""
+        other = acc_id.get("other") or {}
+        if isinstance(other, dict):
+            other_ident = other.get("identification") or ""
+            other_scheme = (other.get("scheme_name") or "").upper()
+    if not iban:
+        iban = account.get("iban") or ""  # legacy / top-level shape
+    for entry in account.get("all_account_ids") or []:
+        if not isinstance(entry, dict):
+            continue
+        scheme = (entry.get("scheme_name") or "").upper()
+        ident = entry.get("identification") or ""
+        if not ident:
+            continue
+        if scheme == "IBAN":
+            iban = iban or ident
+        elif not other_ident:
+            other_ident, other_scheme = ident, scheme
+    return {"iban": iban, "other": other_ident, "other_scheme": other_scheme}
+
+
+_ACCOUNT_TYPE_LABELS = {
+    "CACC": "Current account",
+    "CARD": "Card",
+    "SVGS": "Savings",
+    "LOAN": "Loan",
+    "CASH": "Cash",
+    "OTHR": "Account",
+}
+
+
+def account_display_label(account: dict) -> str:
+    """A short label that distinguishes accounts of the same bank, e.g.
+    'IBAN ····2010' or 'Card ····6170'. Falls back to product / type / uid."""
+    ids = account_identifiers(account)
+    if ids["iban"]:
+        return f"IBAN {_mask_tail(ids['iban'])}"
+    if ids["other"]:
+        scheme = ids["other_scheme"]
+        kind = "Card" if scheme in ("CPAN", "PAN", "MASKEDPAN", "") else scheme
+        return f"{kind} {_mask_tail(ids['other'])}"
+    product = (account.get("product") or "").strip()
+    if product:
+        return product
+    cat = _ACCOUNT_TYPE_LABELS.get((account.get("cash_account_type") or "").upper())
+    if cat:
+        return cat
+    uid = extract_account_uid(account)
+    return f"Account …{uid[-6:]}" if uid else "Account"
+
 def complete_auth(code: str, state: str) -> dict:
     bank_name    = db.get_setting("pending_bank_name")
     bank_country = db.get_setting("pending_bank_country")
