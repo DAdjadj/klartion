@@ -285,13 +285,32 @@ def _sync_enablebanking_token(tokens: dict, category_rules: dict) -> tuple[int, 
     # Also check raw tx_ids across all EB transactions so previously-synced
     # transactions aren't re-imported as duplicates.
     all_known = db.get_known_tx_ids()
+    # The comparison pool must NOT reach across banks: two banks can carry
+    # genuinely distinct transactions with the same date, amount and merchant
+    # (two Netflix subscriptions, say), and matching them would silently drop
+    # real data. Compare only against this bank's own accounts — which is what
+    # makes a bank like Novo Banco, that returns the same feed on every card,
+    # collapse to one row — plus any account UID no token owns any more, left
+    # behind when this bank was re-authorised under a new UID.
+    eb_tokens = [
+        t for t in db.get_all_tokens()
+        if t.get("provider") != "simplefin" and t.get("sync_mode") != "balance"
+    ]
+    live_uids = {t.get("access_token") for t in eb_tokens if t.get("access_token")}
+    same_bank_uids = {
+        t.get("access_token") for t in eb_tokens
+        if t.get("access_token") and _bank_key(t) == _bank_key(tokens)
+    }
     known_raw_tx_ids = set()
     for kid in all_known:
         if kid.startswith(("simplefin:", "provider:")):
             continue
         colon = kid.find(":")
-        if colon > 0:
-            known_raw_tx_ids.add(kid[colon + 1:])
+        if colon <= 0:
+            continue
+        owner, raw = kid[:colon], kid[colon + 1:]
+        if owner in same_bank_uids or owner not in live_uids:
+            known_raw_tx_ids.add(raw)
 
     def _already_known(t: dict) -> bool:
         # Primary key is the content fingerprint (stable across pending->booked
@@ -729,6 +748,14 @@ def _content_fingerprint(tx: dict) -> str:
 
 def _canonical_tx_id(tx: dict) -> str:
     return _content_fingerprint(tx)
+
+
+def _bank_key(token: dict) -> str:
+    """Group the accounts that belong to the same bank. Per-account names look
+    like 'novobanco · Card ····6170', so strip the account label off the end."""
+    name = (token.get("bank_name") or "").split(" · ")[0].strip().lower()
+    country = (token.get("bank_country") or "").strip().lower()
+    return f"{name}|{country}"
 
 
 def _scoped_canonical_tx_id(account_uid: str, tx: dict) -> str:
