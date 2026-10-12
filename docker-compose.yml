@@ -2,6 +2,8 @@ services:
   klartion:
     image: daalves/klartion:latest
     container_name: klartion
+    labels:
+      - com.centurylinklabs.watchtower.scope=klartion
     restart: unless-stopped
     ports:
       - "3001:3000"
@@ -13,6 +15,8 @@ services:
   watchtower:
     image: nickfedor/watchtower
     container_name: klartion-watchtower
+    labels:
+      - com.centurylinklabs.watchtower.scope=klartion
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -23,3 +27,6 @@ services:
     environment:
       - WATCHTOWER_LOG_LEVEL=warn
       - WATCHTOWER_HTTP_API_TOKEN=klartion-update
+      # Own scope, so a server-wide Watchtower on the same host neither removes
+      # this one as an "excess instance" nor gets removed by it.
+      - WATCHTOWER_SCOPE=klartion

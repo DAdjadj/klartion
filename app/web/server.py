@@ -1417,13 +1417,15 @@ def update_run():
     # Try Watchtower first, fall back to helper container
     import requests as _requests
     try:
-        resp = _requests.get(
-            "http://klartion-watchtower:8080/v1/update",
-            headers={"Authorization": "Bearer klartion-update"},
-            timeout=120,
-        )
+        # Current nickfedor/watchtower only accepts POST here (GET gets a 405);
+        # older builds only accepted GET, so retry with GET when POST is refused.
+        url = "http://klartion-watchtower:8080/v1/update"
+        headers = {"Authorization": "Bearer klartion-update"}
+        resp = _requests.post(url, headers=headers, params={"async": "true"}, timeout=120)
+        if resp.status_code in (404, 405):
+            resp = _requests.get(url, headers=headers, timeout=120)
         logger.info("Watchtower update response: %s %s", resp.status_code, resp.text.strip())
-        if resp.status_code == 200:
+        if resp.status_code in (200, 202):
             db.set_setting("update_available", "0")
             return jsonify({"updating": True})
     except Exception:
