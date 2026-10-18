@@ -102,7 +102,7 @@ Open **http://your-server-address:3001** in your browser. The setup wizard will 
 The browser-based wizard walks you through six steps:
 
 1. **Licence** — enter your key to activate Klartion on this machine
-2. **Notion** — duplicate the [ready-made template](https://hilarious-mirror-513.notion.site/4f95e8e7b23183c3be5381bef1d906b2), create a free integration, and paste your credentials
+2. **Notion** — create an empty full-page database, create a free integration, and paste your credentials. Klartion adds the columns itself
 3. **Notifications** — set your email and SMTP credentials
 4. **Sync** — choose your sync frequency (every 6, 12, or 24 hours)
 5. **Bank** — connect your bank. The Bank tab has an EU vs US/Canada toggle. For EU, upload your Enable Banking `.pem` (App ID auto-fills from the filename) and authorise via OAuth. For US/Canada, paste your SimpleFIN setup token and pick which accounts to sync. You can connect up to 2 bank accounts by default and mix providers freely. Each bank's transactions are tagged with the bank name in a "Bank" column in Notion.
@@ -144,7 +144,7 @@ On each sync run, Klartion:
 
 ## Notion database columns
 
-The [Klartion template](https://hilarious-mirror-513.notion.site/4f95e8e7b23183c3be5381bef1d906b2) includes all of these pre-configured:
+Klartion creates these columns automatically when you connect a database (the existing title column is renamed to Merchant):
 
 | Column | Type | Description |
 |---|---|---|

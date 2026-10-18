@@ -79,19 +79,51 @@ def update_transaction_status(notion_page_id: str, status: str, amount: float = 
         properties["Amount"] = {"number": amount}
     notion.pages.update(page_id=notion_page_id, properties=properties)
 
-def ensure_balance_property():
-    """Add a Balance number property to the database if it doesn't exist."""
-    try:
-        notion = _client()
-        db_info = notion.databases.retrieve(database_id=config.NOTION_DATABASE_ID)
-        if "Balance" not in db_info.get("properties", {}):
-            notion.databases.update(
-                database_id=config.NOTION_DATABASE_ID,
-                properties={"Balance": {"number": {"format": "number"}}}
-            )
-            logger.info("Added Balance property to Notion database")
-    except Exception as e:
-        logger.warning("Could not ensure Balance property: %s", e)
+# Columns Klartion writes to. The title column is handled separately because
+# every Notion database already has one (usually called "Name").
+REQUIRED_PROPERTIES = {
+    "Date": {"date": {}},
+    "Amount": {"number": {"format": "number"}},
+    "Currency": {"rich_text": {}},
+    "Category": {"select": {}},
+    "Reference": {"rich_text": {}},
+    "Direction": {"select": {}},
+    "Status": {"select": {}},
+    "Transaction ID": {"rich_text": {}},
+    "Bank": {"rich_text": {}},
+    "Balance": {"number": {"format": "number"}},
+}
+
+def ensure_schema() -> str:
+    """
+    Make the database match what Klartion writes: rename the title column to
+    Merchant and add any missing columns, so an empty database works without
+    a template. Existing columns of the wrong type are reported, never changed.
+    Returns an error message, or "" when the database is ready.
+    """
+    notion = _client()
+    props = notion.databases.retrieve(database_id=config.NOTION_DATABASE_ID).get("properties", {})
+    updates = {}
+
+    title_name = next((n for n, p in props.items() if p.get("type") == "title"), None)
+    if "Merchant" not in props and title_name:
+        updates[props[title_name]["id"]] = {"name": "Merchant"}
+    elif "Merchant" in props and props["Merchant"].get("type") != "title":
+        return 'The "Merchant" column must be the title column of the database.'
+
+    wrong = []
+    for name, schema in REQUIRED_PROPERTIES.items():
+        if name not in props:
+            updates[name] = schema
+        elif props[name].get("type") != next(iter(schema)):
+            wrong.append(f'"{name}" should be {next(iter(schema)).replace("rich_text", "text")}')
+    if wrong:
+        return "Some columns have the wrong type: " + ", ".join(wrong) + ". Rename or delete them and try again."
+
+    if updates:
+        notion.databases.update(database_id=config.NOTION_DATABASE_ID, properties=updates)
+        logger.info("Added or renamed Notion columns: %s", ", ".join(updates))
+    return ""
 
 
 def fetch_category_rules() -> dict:
