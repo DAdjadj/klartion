@@ -189,6 +189,7 @@ def setup_notion():
                 from ..notion import verify_database, ensure_schema
                 _cfg().set("NOTION_API_KEY", api_key)
                 _cfg().set("NOTION_DATABASE_ID", db_id)
+                from ..notion_auth import use_integration_key
                 if not verify_database():
                     error = "Could not access that Notion database. Check the key and database ID, and make sure the integration is connected to the database."
                     _cfg().set("NOTION_API_KEY", "")
@@ -196,16 +197,38 @@ def setup_notion():
                 else:
                     error = ensure_schema() or None
                     if not error:
+                        use_integration_key()
                         return redirect(url_for("setup_notifications"))
             except Exception as e:
                 error = f"Notion connection failed: {e}"
+    from ..notion_auth import available as notion_signin_available
+    signed_in = _cfg().NOTION_AUTH_MODE == "oauth"
     return render_template("setup_notion.html",
         error=error,
-        notion_api_key=_cfg().NOTION_API_KEY,
+        # A signed-in token is not something to show or edit in the key form.
+        notion_api_key="" if signed_in else _cfg().NOTION_API_KEY,
         notion_database_id=_cfg().NOTION_DATABASE_ID,
+        signin_available=notion_signin_available(),
+        signed_in=signed_in,
+        notion_workspace=_cfg().NOTION_WORKSPACE,
+        attempt_pending=bool(db.get_setting("notion_oauth_state")),
+        key_form_open=bool(error) or (bool(_cfg().NOTION_API_KEY) and not signed_in),
         is_configured=_is_configured(),
         active="notion",
     )
+
+@app.route("/setup/notion/connect", methods=["POST"])
+def setup_notion_connect():
+    from ..notion_auth import start
+    return jsonify(start())
+
+@app.route("/setup/notion/connect/status")
+def setup_notion_connect_status():
+    from ..notion_auth import poll
+    result = poll()
+    if result.get("status") == "connected":
+        result["next"] = url_for("setup_notifications")
+    return jsonify(result)
 
 @app.route("/setup/notifications", methods=["GET", "POST"])
 def setup_notifications():

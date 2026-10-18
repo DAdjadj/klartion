@@ -17,13 +17,27 @@
   {% if error %}
     <div class="alert alert-error">{{ error }}</div>
   {% endif %}
+  {% if signin_available %}
+  {% if signed_in %}
+    <div class="alert alert-success">Connected to {{ notion_workspace or "your Notion workspace" }}. Transactions go to the <strong>Klartion Transactions</strong> database.</div>
+  {% endif %}
+  <div style="font-size:13px; color:var(--muted); margin-bottom:1rem;">Notion opens in a new tab. Sign in, keep <strong>Use a template provided by the developer</strong> selected and click <strong>Allow</strong>. This page carries on by itself.</div>
+  <div id="connect-error" class="alert alert-error" style="display:none;"></div>
+  <button id="connect-btn" class="btn btn-primary" type="button">{% if signed_in %}Reconnect Notion{% else %}Connect Notion →{% endif %}</button>
+  {% if signed_in and not is_configured %}
+    <a href="{{ url_for('setup_notifications') }}" class="btn btn-secondary" style="margin-top:0.5rem;">Continue →</a>
+  {% endif %}
+  <div id="connect-status" style="font-size:12px; color:var(--muted); margin-top:0.75rem; display:none;">Waiting for Notion. Finish signing in on the Notion tab.</div>
+  <details style="margin-top:1.75rem;" {% if key_form_open %}open{% endif %}>
+    <summary style="font-size:13px; cursor:pointer; color:var(--muted); margin-bottom:1rem;">Use an integration key instead</summary>
+{% endif %}
   <div style="background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:1rem 1.25rem; margin-bottom:1.5rem;">
     <div style="font-size:13px; font-weight:600; margin-bottom:0.35rem;">Step 1 — Create an empty database</div>
     <div style="font-size:12px; color:var(--muted); margin-bottom:0;">In Notion, create a new page, type <strong>/database</strong> and choose <strong>Database - Full page</strong>. Name it anything, e.g. <em>Transactions</em>, and leave it empty. Klartion adds all the columns it needs when you click Verify below.</div>
   </div>
   <form method="POST">
     <label for="notion_api_key" style="margin-top:0;">Step 2 — Internal integration secret</label>
-    <input type="text" id="notion_api_key" name="notion_api_key" value="{{ notion_api_key }}" placeholder="secret_xxxxxxxxxxxxxxxxxxxx" autocomplete="off" autofocus required>
+    <input type="text" id="notion_api_key" name="notion_api_key" value="{{ notion_api_key }}" placeholder="secret_xxxxxxxxxxxxxxxxxxxx" autocomplete="off" {% if not signin_available %}autofocus {% endif %}required>
     <div style="font-size:11px; color:var(--hint); margin-top:0.4rem;">
       Go to <a href="https://notion.so/my-integrations" target="_blank" style="color:var(--muted);">notion.so/my-integrations</a>, create a new integration, then copy the <strong>Internal integration secret</strong>. Open your new database, click <strong>...</strong> → <strong>Connections</strong> and add your integration.
     </div>
@@ -34,5 +48,55 @@
     </div>
     <button class="btn btn-primary" type="submit">Verify and continue →</button>
   </form>
+{% if signin_available %}
+  </details>
+  <script>
+  (function () {
+    var btn = document.getElementById('connect-btn');
+    var statusEl = document.getElementById('connect-status');
+    var errEl = document.getElementById('connect-error');
+    var timer = null, deadline = 0;
+
+    function showError(msg) {
+      errEl.textContent = msg; errEl.style.display = '';
+      statusEl.style.display = 'none'; btn.disabled = false;
+      if (timer) { clearInterval(timer); timer = null; }
+    }
+    function check() {
+      if (Date.now() > deadline) return showError('The sign-in timed out. Click Connect Notion to try again.');
+      fetch('/setup/notion/connect/status').then(function (r) { return r.json(); }).then(function (d) {
+        if (d.status === 'connected') {
+          clearInterval(timer);
+          {% if is_configured %}location.reload();{% else %}location.href = d.next;{% endif %}
+        } else if (d.status === 'error') {
+          showError(d.error);
+        }
+      }).catch(function () {});
+    }
+    function waitForNotion() {
+      errEl.style.display = 'none'; statusEl.style.display = ''; btn.disabled = true;
+      deadline = Date.now() + 30 * 60 * 1000;
+      if (!timer) timer = setInterval(check, 2000);
+    }
+
+    btn.addEventListener('click', function () {
+      // Open the tab inside the click so pop-up blockers allow it.
+      var tab = window.open('', '_blank');
+      btn.disabled = true; errEl.style.display = 'none';
+      fetch('/setup/notion/connect', { method: 'POST' }).then(function (r) { return r.json(); }).then(function (d) {
+        if (!d.url) { if (tab) tab.close(); return showError(d.error || 'Could not start the Notion sign-in.'); }
+        var url = d.url + '&return=' + encodeURIComponent(location.origin);
+        if (tab) { tab.location = url; waitForNotion(); }
+        else { location.href = url; }
+      }).catch(function () {
+        if (tab) tab.close();
+        showError('Could not reach Klartion. Try again.');
+      });
+    });
+
+    {% if attempt_pending %}waitForNotion();{% endif %}
+  })();
+  </script>
+{% endif %}
 </div>
 {% endblock %}

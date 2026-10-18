@@ -102,7 +102,7 @@ Open **http://your-server-address:3001** in your browser. The setup wizard will 
 The browser-based wizard walks you through six steps:
 
 1. **Licence** — enter your key to activate Klartion on this machine
-2. **Notion** — create an empty full-page database, create a free integration, and paste your credentials. Klartion adds the columns itself
+2. **Notion** — click **Connect Notion**, sign in, keep the Klartion template selected and click Allow. Klartion creates its database and columns itself. (Prefer your own integration? Expand "Use an integration key instead", create an empty full-page database and paste the key and database URL.)
 3. **Notifications** — set your email and SMTP credentials
 4. **Sync** — choose your sync frequency (every 6, 12, or 24 hours)
 5. **Bank** — connect your bank. The Bank tab has an EU vs US/Canada toggle. For EU, upload your Enable Banking `.pem` (App ID auto-fills from the filename) and authorise via OAuth. For US/Canada, paste your SimpleFIN setup token and pick which accounts to sync. You can connect up to 2 bank accounts by default and mix providers freely. Each bank's transactions are tagged with the bank name in a "Bank" column in Notion.
