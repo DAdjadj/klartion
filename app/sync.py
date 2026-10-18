@@ -71,10 +71,19 @@ def _run_impl(trigger: str):
     # 2b. Ensure the Notion database has every column Klartion writes
     try:
         schema_error = notion.ensure_schema()
-        if schema_error:
-            logger.warning("Notion schema: %s", schema_error)
     except Exception as e:
-        logger.warning("Could not check Notion columns: %s", e)
+        schema_error = ""
+        # A signed-in token Notion no longer accepts gets one forced renewal.
+        from . import notion_auth
+        if getattr(e, "code", "") == "unauthorized" and notion_auth.refresh(force=True):
+            try:
+                schema_error = notion.ensure_schema()
+            except Exception as e2:
+                logger.warning("Could not check Notion columns: %s", e2)
+        else:
+            logger.warning("Could not check Notion columns: %s", e)
+    if schema_error:
+        logger.warning("Notion schema: %s", schema_error)
 
     # 2c. Learn category rules from Notion (user's manual edits)
     try:

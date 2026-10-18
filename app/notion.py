@@ -5,6 +5,8 @@ from . import config
 logger = logging.getLogger(__name__)
 
 def _client():
+    from . import notion_auth
+    notion_auth.refresh()
     return Client(auth=config.NOTION_API_KEY)
 
 def write_transaction(tx: dict) -> str:
@@ -124,6 +126,54 @@ def ensure_schema() -> str:
         notion.databases.update(database_id=config.NOTION_DATABASE_ID, properties=updates)
         logger.info("Added or renamed Notion columns: %s", ", ".join(updates))
     return ""
+
+
+DATABASE_TITLE = "Klartion Transactions"
+
+def _has_klartion_columns(db_info: dict) -> bool:
+    return "Transaction ID" in db_info.get("properties", {})
+
+def find_or_create_database(page_id: str = None) -> str:
+    """
+    Pick the database to write to after Sign in with Notion, creating one if
+    needed. page_id is the copy of Klartion's template, when the user chose it.
+    Returns the database ID.
+    """
+    notion = _client()
+
+    if page_id:
+        # The template may itself be a database, or a page holding one.
+        try:
+            notion.databases.retrieve(database_id=page_id)
+            return page_id
+        except Exception:
+            pass
+        children = notion.blocks.children.list(block_id=page_id).get("results", [])
+        for block in children:
+            if block.get("type") == "child_database":
+                return block["id"]
+        return _create_database(notion, page_id)
+
+    # The user picked their own pages instead of the template.
+    shared = notion.search(filter={"property": "object", "value": "database"}).get("results", [])
+    if shared:
+        return next((d for d in shared if _has_klartion_columns(d)), shared[0])["id"]
+    pages = notion.search(filter={"property": "object", "value": "page"}).get("results", [])
+    if not pages:
+        raise ValueError("Notion did not share any page with Klartion. Click Connect Notion again and keep "
+                         "\"Use a template provided by the developer\" selected.")
+    top = next((p for p in pages if p.get("parent", {}).get("type") == "workspace"), pages[0])
+    return _create_database(notion, top["id"])
+
+def _create_database(notion, page_id: str) -> str:
+    properties = {"Merchant": {"title": {}}, **REQUIRED_PROPERTIES}
+    db_info = notion.databases.create(
+        parent={"type": "page_id", "page_id": page_id},
+        title=[{"type": "text", "text": {"content": DATABASE_TITLE}}],
+        properties=properties,
+    )
+    logger.info("Created Notion database %s", db_info["id"])
+    return db_info["id"]
 
 
 def fetch_category_rules() -> dict:
