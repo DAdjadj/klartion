@@ -68,8 +68,13 @@ def _run_impl(trigger: str):
     else:
         db.set_setting("license_bank_limit_error", "")
 
-    # 2b. Ensure Balance property exists on Notion database
-    notion.ensure_balance_property()
+    # 2b. Ensure the Notion database has every column Klartion writes
+    try:
+        schema_error = notion.ensure_schema()
+        if schema_error:
+            logger.warning("Notion schema: %s", schema_error)
+    except Exception as e:
+        logger.warning("Could not check Notion columns: %s", e)
 
     # 2c. Learn category rules from Notion (user's manual edits)
     try:

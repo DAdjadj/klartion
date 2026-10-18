@@ -186,7 +186,7 @@ def setup_notion():
             error = "Both fields are required."
         else:
             try:
-                from ..notion import verify_database
+                from ..notion import verify_database, ensure_schema
                 _cfg().set("NOTION_API_KEY", api_key)
                 _cfg().set("NOTION_DATABASE_ID", db_id)
                 if not verify_database():
@@ -194,7 +194,9 @@ def setup_notion():
                     _cfg().set("NOTION_API_KEY", "")
                     _cfg().set("NOTION_DATABASE_ID", "")
                 else:
-                    return redirect(url_for("setup_notifications"))
+                    error = ensure_schema() or None
+                    if not error:
+                        return redirect(url_for("setup_notifications"))
             except Exception as e:
                 error = f"Notion connection failed: {e}"
     return render_template("setup_notion.html",
