@@ -13,7 +13,7 @@
 {% block content %}
 <div class="card">
   <div class="card-title">Bank</div>
-  <div class="card-sub">Step 5 of 6 — authorise read-only access to your bank</div>
+  <div class="card-sub">Step 5 of 6 — authorize read-only access to your bank</div>
 
   {% if error %}
     <div class="alert alert-error">{{ error }}</div>
@@ -103,7 +103,7 @@
           <input type="hidden" name="token_id" value="{{ t.id }}">
           <input type="hidden" name="bank_name" value="{{ t.bank_name }}">
           <input type="hidden" name="bank_country" value="{{ t.bank_country }}">
-          <button type="submit" style="background:none; border:none; color:var(--muted); cursor:pointer; font-size:11px; text-decoration:underline;">Re-authorise</button>
+          <button type="submit" style="background:none; border:none; color:var(--muted); cursor:pointer; font-size:11px; text-decoration:underline;">Re-authorize</button>
         </form>
       </div>
       {% endif %}
@@ -169,7 +169,7 @@
         <button type="button" onclick="clearBank()" style="background:none; border:none; color:var(--muted); cursor:pointer; font-size:11px; padding:0;">clear</button>
       </div>
       <div style="font-size:11px; color:var(--hint); margin-top:0.5rem;">Personal accounts only. 2,500+ banks across 29 European countries.</div>
-      <button class="btn btn-primary" type="submit" id="connect-btn" disabled style="background:var(--border); opacity:0.5;">Authorise bank →</button>
+      <button class="btn btn-primary" type="submit" id="connect-btn" disabled style="background:var(--border); opacity:0.5;">Authorize bank →</button>
     </form>
     {% else %}
     <form method="POST" enctype="multipart/form-data">
@@ -249,7 +249,7 @@
 
   {% elif auth_url %}
     <div style="text-align:center; padding:0.5rem 0 1rem;">
-      <div style="font-size:15px; font-weight:600; margin-bottom:0.5rem; font-family:var(--serif);">Authorise {{ pending_bank }}</div>
+      <div style="font-size:15px; font-weight:600; margin-bottom:0.5rem; font-family:var(--serif);">Authorize {{ pending_bank }}</div>
       <div style="font-size:13px; color:var(--muted); margin-bottom:1.5rem; line-height:1.6;">
         Click the button below to open your bank login page.<br>
         After approving, you will be returned here automatically.
