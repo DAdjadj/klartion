@@ -96,7 +96,7 @@ def _ensure_global_bank_capacity(tokens, new_seats=1):
     if not result.get("ok"):
         if result.get("network"):
             return "Could not confirm your global bank slot availability right now. Please try again in a moment."
-        return result.get("error") or "Bank account limit reached for this licence."
+        return result.get("error") or "Bank account limit reached for this license."
     used = int(result.get("used") or 0)
     limit = int(result.get("limit") or _get_bank_account_limit())
     available = max(0, limit - used)
@@ -115,7 +115,7 @@ def _claim_bank_seat(token):
         return None
     if result.get("network"):
         return "Could not confirm your global bank slot availability right now. Please try again in a moment."
-    return result.get("error") or "Bank account limit reached for this licence."
+    return result.get("error") or "Bank account limit reached for this license."
 
 @app.route("/")
 def index():
@@ -610,7 +610,7 @@ def reauthorise():
         auth_url = result["url"]
     except Exception as e:
         logger.error("Failed to start reauth: %s", e)
-        return redirect(url_for("connect") + f"?error=Could not start re-authorisation: {e}")
+        return redirect(url_for("connect") + f"?error=Could not start re-authorization: {e}")
     all_tokens = db.get_all_tokens()
     bank_seat_error, bank_seat_result = _get_bank_seat_error(all_tokens)
     bank_account_limit = int((bank_seat_result or {}).get("limit") or _get_bank_account_limit())

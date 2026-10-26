@@ -90,19 +90,19 @@ def activate(key):
             db.set_setting("licence_key", key)
             return {"valid": True, "error": None}
         else:
-            msg = data.get("error") or "Invalid licence key."
+            msg = data.get("error") or "Invalid license key."
             return {"valid": False, "error": msg}
     except requests.RequestException as e:
-        logger.warning("Licence activate failed (network): %s", e)
+        logger.warning("License activate failed (network): %s", e)
         if db.get_setting("licence_key") == key:
             return {"valid": True, "error": None, "offline": True}
-        return {"valid": False, "error": "Could not reach the licence server. Check your internet connection and try again."}
+        return {"valid": False, "error": "Could not reach the license server. Check your internet connection and try again."}
 
 def deactivate():
     key = config.LICENCE_KEY
     fp = _get_fingerprint()
     if not key:
-        return {"success": False, "error": "No active licence to deactivate."}
+        return {"success": False, "error": "No active license to deactivate."}
     try:
         resp, data = _post_json(
             "/deactivate",
@@ -116,13 +116,13 @@ def deactivate():
             msg = data.get("error") or "Deactivation failed."
             return {"success": False, "error": msg}
     except requests.RequestException as e:
-        logger.warning("Licence deactivate failed (network): %s", e)
+        logger.warning("License deactivate failed (network): %s", e)
         return {"success": False, "error": str(e)}
 
 def validate(key=None):
     key = key or config.LICENCE_KEY
     if not key:
-        return {"valid": False, "error": "No licence key configured."}
+        return {"valid": False, "error": "No license key configured."}
     fp = _get_fingerprint()
     try:
         resp, data = _post_json(
@@ -136,13 +136,13 @@ def validate(key=None):
             reactivation = activate(key)
             if reactivation.get("valid"):
                 return {"valid": True, "error": None}
-            msg = data.get("error") or "Invalid licence key."
+            msg = data.get("error") or "Invalid license key."
             return {"valid": False, "error": msg}
     except requests.RequestException as e:
-        logger.warning("Licence check failed (network): %s", e)
+        logger.warning("License check failed (network): %s", e)
         if db.get_setting("licence_key") == key:
             return {"valid": True, "error": None, "offline": True}
-        return {"valid": False, "error": "Could not reach the licence server. Check your internet connection."}
+        return {"valid": False, "error": "Could not reach the license server. Check your internet connection."}
 
 def get_activation_info():
     key = config.LICENCE_KEY
@@ -166,7 +166,7 @@ def get_activation_info():
 def claim_bank_seat(token, key=None):
     key = key or config.LICENCE_KEY
     if not key:
-        return {"ok": False, "error": "No licence key configured."}
+        return {"ok": False, "error": "No license key configured."}
     seat_id = (token.get("license_seat_id") or "").strip()
     if not seat_id:
         return {"ok": False, "error": "Missing local bank seat ID."}
@@ -183,18 +183,18 @@ def claim_bank_seat(token, key=None):
             return {"ok": True, "used": data.get("used"), "limit": data.get("limit")}
         return {
             "ok": False,
-            "error": data.get("error") or "Could not reserve a bank slot for this licence.",
+            "error": data.get("error") or "Could not reserve a bank slot for this license.",
             "used": data.get("used"),
             "limit": data.get("limit"),
         }
     except requests.RequestException as e:
         logger.warning("Bank seat claim failed (network): %s", e)
-        return {"ok": False, "error": "Could not reach the licence server to confirm bank slot availability.", "network": True}
+        return {"ok": False, "error": "Could not reach the license server to confirm bank slot availability.", "network": True}
 
 def sync_bank_seats(tokens, key=None):
     key = key or config.LICENCE_KEY
     if not key:
-        return {"ok": False, "error": "No licence key configured."}
+        return {"ok": False, "error": "No license key configured."}
     try:
         resp, data = _post_json("/bank-seats/sync", {
             "license_key": key,
@@ -214,10 +214,10 @@ def sync_bank_seats(tokens, key=None):
             return {"ok": True, "used": data.get("used"), "limit": data.get("limit")}
         return {
             "ok": False,
-            "error": data.get("error") or "Could not verify bank slots for this licence.",
+            "error": data.get("error") or "Could not verify bank slots for this license.",
             "used": data.get("used"),
             "limit": data.get("limit"),
         }
     except requests.RequestException as e:
         logger.warning("Bank seat sync failed (network): %s", e)
-        return {"ok": False, "error": "Could not reach the licence server to verify connected bank slots.", "network": True}
+        return {"ok": False, "error": "Could not reach the license server to verify connected bank slots.", "network": True}
