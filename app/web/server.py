@@ -272,14 +272,10 @@ def test_email():
         # If form data provided, use it directly (allows testing before saving)
         if data.get("smtp_user") and data.get("smtp_password") and data.get("notify_email"):
             import smtplib
-            from email.mime.text import MIMEText
-            from email.mime.multipart import MIMEMultipart
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = "Klartion: test email"
-            msg["From"]    = data.get("smtp_from") or data["smtp_user"]
-            msg["To"]      = data["notify_email"]
-            msg.attach(MIMEText("This is a test email from Klartion. If you're reading this, your email notifications are working correctly.", "plain"))
             host = data.get("smtp_host") or email_notify._smtp_host_for(data["smtp_user"])
+            subject, text, html = email_notify.render(email_notify.build_test(
+                notify_email=data["notify_email"], notify_on=data.get("notify_on"), host=host))
+            msg = email_notify.build_message(subject, text, html, data.get("smtp_from") or data["smtp_user"], data["notify_email"])
             port = int(_cfg().SMTP_PORT or 587)
             with smtplib.SMTP(host, port) as server:
                 server.ehlo()
@@ -287,7 +283,7 @@ def test_email():
                 server.login(data["smtp_user"], data["smtp_password"])
                 server.sendmail(data.get("smtp_from") or data["smtp_user"], data["notify_email"], msg.as_string())
         else:
-            email_notify.send("Klartion: test email", "This is a test email from Klartion. If you're reading this, your email notifications are working correctly.")
+            email_notify.send_test()
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 500

@@ -125,7 +125,10 @@ def _run_impl(trigger: str):
     if errors:
         msg = f"{total_written} transactions written. Errors: {'; '.join(errors)}"
         db.log_sync("partial" if total_written > 0 else "failure", tx_count=total_written, message=msg)
-        email_notify.send_failure(msg)
+        if total_written > 0:
+            email_notify.send_partial(total_written, balance_lines, errors)
+        else:
+            email_notify.send_failure(msg, errors=errors)
     else:
         db.log_sync("success", tx_count=total_written)
         email_notify.send_success(total_written, balance_lines=balance_lines)
