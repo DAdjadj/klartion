@@ -49,7 +49,7 @@ def every_alert():
         "success-none": email_notify.build_success(0, []),
         "partial": email_notify.build_partial(9, BALANCES, ERRORS[:1]),
         "failure-accounts": email_notify.build_failure("0 transactions written. Errors: ...", ERRORS),
-        "failure-single": email_notify.build_failure("Licence invalid: This licence key has been deactivated."),
+        "failure-single": email_notify.build_failure("License invalid: This license key has been deactivated."),
         "expiry": email_notify.build_token_expiry_warning("ING", 5),
         "test": email_notify.build_test(),
     }
@@ -110,10 +110,18 @@ class AlertContentTest(unittest.TestCase):
         _, e = email_notify.build_failure("No bank connection found. Please connect your bank.")
         self.assertEqual(e["problems"], [{"name": "", "detail": "No bank connection found. Please connect your bank."}])
 
+    def test_us_date_and_time(self):
+        self.assertEqual(email_notify._day_short(NOW), "Oct 26")
+        self.assertEqual(email_notify._day_long(NOW), "Monday, October 26")
+        self.assertEqual(email_notify._stamp(NOW), "Oct 26, 2026, 7:00 AM")
+        self.assertEqual(email_notify._stamp(NOW.replace(hour=0, minute=5)), "Oct 26, 2026, 12:05 AM")
+        self.assertEqual(email_notify._stamp(NOW.replace(hour=12)), "Oct 26, 2026, 12:00 PM")
+        self.assertEqual(email_notify._stamp(NOW.replace(hour=19, minute=30)), "Oct 26, 2026, 7:30 PM")
+
     def test_bank_connection_expiry(self):
         subject, e = email_notify.build_token_expiry_warning("ING", 5)
         self.assertEqual(subject, "Klartion: your ING connection expires in 5 days")
-        self.assertIn({"label": "Expires", "value": "Saturday 31 October"}, e["facts"])
+        self.assertIn({"label": "Expires", "value": "Saturday, October 31"}, e["facts"])
         self.assertEqual(e["cta"]["href"], "http://192.168.1.20:3001/connect")
         subject, e = email_notify.build_token_expiry_warning("ING", 1)
         self.assertEqual(subject, "Klartion: your ING connection expires in 1 day")

@@ -4,7 +4,7 @@
 
 Klartion connects to your bank (EU, US, or Canada) and writes your transactions into a Notion database every day. It runs on your own machine — your financial data never touches any third-party server.
 
-→ **[klartion.com](https://klartion.com)** · [Buy a licence](https://klartion.com)
+→ **[klartion.com](https://klartion.com)** · [Buy a license](https://klartion.com)
 
 ---
 
@@ -31,7 +31,7 @@ Klartion connects to your bank (EU, US, or Canada) and writes your transactions 
   - **EU banks:** an [Enable Banking](https://enablebanking.com) account (free)
   - **US/Canadian banks:** a [SimpleFIN Bridge](https://bridge.simplefin.org) account ($15/year — required by SimpleFIN, not Klartion)
 - A [Notion](https://notion.so) account
-- A Klartion licence key — [buy one at klartion.com](https://klartion.com)
+- A Klartion license key — [buy one at klartion.com](https://klartion.com)
 
 ---
 
@@ -39,7 +39,7 @@ Klartion connects to your bank (EU, US, or Canada) and writes your transactions 
 
 > **New to self-hosting?** Follow the step-by-step guide at [klartion.com/getting-started](https://klartion.com/getting-started.html) — it walks you through everything from Enable Banking setup to running your first sync.
 
-### 1. Get your licence key
+### 1. Get your license key
 
 Purchase at [klartion.com](https://klartion.com). Your key is delivered to your email instantly.
 
@@ -101,11 +101,11 @@ Open **http://your-server-address:3001** in your browser. The setup wizard will 
 
 The browser-based wizard walks you through six steps:
 
-1. **Licence** — enter your key to activate Klartion on this machine
+1. **License** — enter your key to activate Klartion on this machine
 2. **Notion** — click **Connect Notion**, sign in, keep the Klartion template selected and click Allow. Klartion creates its database and columns itself. (Prefer your own integration? Expand "Use an integration key instead", create an empty full-page database and paste the key and database URL.)
 3. **Notifications** — set your email and SMTP credentials
 4. **Sync** — choose your sync frequency (every 6, 12, or 24 hours)
-5. **Bank** — connect your bank. The Bank tab has an EU vs US/Canada toggle. For EU, upload your Enable Banking `.pem` (App ID auto-fills from the filename) and authorise via OAuth. For US/Canada, paste your SimpleFIN setup token and pick which accounts to sync. You can connect up to 2 bank accounts by default and mix providers freely. Each bank's transactions are tagged with the bank name in a "Bank" column in Notion.
+5. **Bank** — connect your bank. The Bank tab has an EU vs US/Canada toggle. For EU, upload your Enable Banking `.pem` (App ID auto-fills from the filename) and authorize via OAuth. For US/Canada, paste your SimpleFIN setup token and pick which accounts to sync. You can connect up to 2 bank accounts by default and mix providers freely. Each bank's transactions are tagged with the bank name in a "Bank" column in Notion.
 6. **Status** — view sync history, manage bank connections, check for updates
 
 Once complete, Klartion runs silently in the background. To add a second bank, go to the **Bank** tab and search for another bank. Need more than 2? You can purchase additional bank account slots from the status page.
@@ -114,7 +114,7 @@ Once complete, Klartion runs silently in the background. To add a second bank, g
 
 ## Session renewal
 
-**Enable Banking (EU)** requires you to re-authorise access roughly every 180 days. If you configured email notifications, you will receive a warning before expiry. To re-authorise, go to the **Status** page in the Klartion web UI and click **Re-authorise bank**.
+**Enable Banking (EU)** requires you to re-authorize access roughly every 180 days. If you configured email notifications, you will receive a warning before expiry. To re-authorize, go to the **Status** page in the Klartion web UI and click **Re-authorize bank**.
 
 **SimpleFIN (US/Canada)** access tokens do not expire on a clock — they remain valid as long as your SimpleFIN subscription is active and your bank does not revoke the connection. If access is revoked (subscription lapse, bank change, manual revocation in SimpleFIN), Klartion will surface a banner asking you to regenerate a setup token at [bridge.simplefin.org](https://bridge.simplefin.org) and reconnect the affected account.
 
@@ -133,7 +133,7 @@ Your inbox  ← daily summary email
 
 On each sync run, Klartion:
 
-1. Validates your licence key
+1. Validates your license key
 2. Fetches transactions since the last sync from each connected provider
 3. Filters out any transaction IDs already in the local SQLite database
 4. Writes new transactions to your Notion database
@@ -170,7 +170,7 @@ Or run manually:
 docker compose pull && docker compose up -d
 ```
 
-**Running your own Watchtower too?** Current Watchtower versions delete duplicate instances on the same Docker host, which can remove `klartion-watchtower` and with it in-app updates. The compose file gives Klartion's Watchtower its own scope so both can coexist. Older installs get this added automatically after updating, with a backup of the original file, unless the file has been customised. To add it by hand, add to **both** services in `docker-compose.yml`:
+**Running your own Watchtower too?** Current Watchtower versions delete duplicate instances on the same Docker host, which can remove `klartion-watchtower` and with it in-app updates. The compose file gives Klartion's Watchtower its own scope so both can coexist. Older installs get this added automatically after updating, with a backup of the original file, unless the file has been customized. To add it by hand, add to **both** services in `docker-compose.yml`:
 ```yaml
     labels:
       - com.centurylinklabs.watchtower.scope=klartion
@@ -183,13 +183,13 @@ then run `docker compose up -d`.
 
 ---
 
-## Licence deactivation
+## License deactivation
 
-Each licence key supports up to 2 machine activations. To move Klartion to a new machine, go to the **Status** page in the web UI and click **Deactivate licence** before reinstalling.
+Each license key supports up to 2 machine activations. To move Klartion to a new machine, go to the **Status** page in the web UI and click **Deactivate license** before reinstalling.
 
 ---
 
-## Licence
+## License
 
 MIT + Commons Clause. Free to self-host for personal use. You may not sell, sublicence, or offer Klartion as a competing service. See [LICENSE](LICENSE).
 

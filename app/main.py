@@ -17,7 +17,7 @@ def main():
 
     # Initialise database first (config depends on it)
     db.init()
-    logger.info("Database initialised.")
+    logger.info("Database initialized.")
 
     # Import config after db is ready
     from . import config
@@ -27,7 +27,7 @@ def main():
         from . import licence
         result = licence.validate()
         if not result["valid"] and not result.get("offline"):
-            logger.warning("Licence invalid: %s — web UI will prompt for setup.", result["error"])
+            logger.warning("License invalid: %s — web UI will prompt for setup.", result["error"])
         else:
             # Start scheduler
             start_scheduler()

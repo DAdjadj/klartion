@@ -107,16 +107,16 @@ def _now() -> datetime.datetime:
         return datetime.datetime.now(datetime.timezone.utc)
 
 
-def _day_long(d) -> str:   # "Thursday 29 October"
-    return f"{_DAYS[d.weekday()]} {d.day} {_MONTHS[d.month - 1]}"
+def _day_long(d) -> str:   # "Thursday, October 29"
+    return f"{_DAYS[d.weekday()]}, {_MONTHS[d.month - 1]} {d.day}"
 
 
-def _day_short(d) -> str:  # "29 Oct"
-    return f"{d.day} {_MONTHS[d.month - 1][:3]}"
+def _day_short(d) -> str:  # "Oct 29"
+    return f"{_MONTHS[d.month - 1][:3]} {d.day}"
 
 
-def _stamp(dt) -> str:     # "26 Oct 2026, 07:00"
-    return f"{_day_short(dt)} {dt.year}, {dt:%H:%M}"
+def _stamp(dt) -> str:     # "Oct 26, 2026, 7:00 AM"
+    return f"{_day_short(dt)}, {dt.year}, {dt.hour % 12 or 12}:{dt:%M} {'AM' if dt.hour < 12 else 'PM'}"
 
 
 def _plural(n: int, one: str, many: str) -> str:
@@ -186,7 +186,7 @@ def _open_buttons(with_notion: bool) -> list:
 
 _TRY_STEPS = [
     "Open the Status page in Klartion. Its sync log shows what happened.",
-    "If your bank asks to be re-authorised, click Re-authorise on the Bank page.",
+    "If your bank asks to be re-authorized, click Re-authorize on the Bank page.",
     f"Still stuck? Write to [{SUPPORT}](mailto:{SUPPORT}) and say what the sync log shows.",
 ]
 
@@ -269,7 +269,7 @@ def build_token_expiry_warning(bank_name: str, days_left: int):
     status = "Expires today" if days_left <= 0 else "Expires tomorrow" if days_left == 1 else f"Expires in {days_left} days"
     return subject, {
         "subject": subject,
-        "preheader": "Re-authorise it on the Bank page. It takes about a minute.",
+        "preheader": "Re-authorize it on the Bank page. It takes about a minute.",
         "chip": "Bank connection",
         "title": f"Your {bank} connection expires {when}",
         "facts": [
@@ -282,7 +282,7 @@ def build_token_expiry_warning(bank_name: str, days_left: int):
         "steps_title": "Renew it in three steps",
         "steps": [
             f"Open Klartion and go to the {_page_link('Bank page', '/connect')}.",
-            f"Click Re-authorise under {bank}.",
+            f"Click Re-authorize under {bank}.",
             "Sign in at your bank and approve access.",
         ],
         "cta": {"label": "Open the Bank page", "href": _app_url("/connect")},
