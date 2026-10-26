@@ -39,7 +39,7 @@ def _run_impl(trigger: str):
     # 1. Licence check
     result = licence.validate()
     if not result["valid"]:
-        msg = f"Licence invalid: {result['error']}"
+        msg = f"License invalid: {result['error']}"
         logger.error(msg)
         db.log_sync("failure", message=msg)
         email_notify.send_failure(msg)
@@ -59,7 +59,7 @@ def _run_impl(trigger: str):
         if seat_result.get("network"):
             logger.warning("Bank seat verification skipped: %s", seat_result.get("error"))
         else:
-            msg = seat_result.get("error") or "Bank account limit reached for this licence."
+            msg = seat_result.get("error") or "Bank account limit reached for this license."
             logger.error(msg)
             db.set_setting("license_bank_limit_error", msg)
             db.log_sync("failure", message=msg)
