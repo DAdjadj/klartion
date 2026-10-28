@@ -111,17 +111,17 @@ class AlertContentTest(unittest.TestCase):
         self.assertEqual(e["problems"], [{"name": "", "detail": "No bank connection found. Please connect your bank."}])
 
     def test_us_date_and_time(self):
-        self.assertEqual(email_notify._day_short(NOW), "Oct 26")
-        self.assertEqual(email_notify._day_long(NOW), "Monday, October 26")
-        self.assertEqual(email_notify._stamp(NOW), "Oct 26, 2026, 7:00 AM")
-        self.assertEqual(email_notify._stamp(NOW.replace(hour=0, minute=5)), "Oct 26, 2026, 12:05 AM")
-        self.assertEqual(email_notify._stamp(NOW.replace(hour=12)), "Oct 26, 2026, 12:00 PM")
-        self.assertEqual(email_notify._stamp(NOW.replace(hour=19, minute=30)), "Oct 26, 2026, 7:30 PM")
+        self.assertEqual(email_notify._day_short(NOW), "26 Oct")
+        self.assertEqual(email_notify._day_long(NOW), "Monday 26 October")
+        self.assertEqual(email_notify._stamp(NOW), "26 Oct 2026, 7:00 AM")
+        self.assertEqual(email_notify._stamp(NOW.replace(hour=0, minute=5)), "26 Oct 2026, 12:05 AM")
+        self.assertEqual(email_notify._stamp(NOW.replace(hour=12)), "26 Oct 2026, 12:00 PM")
+        self.assertEqual(email_notify._stamp(NOW.replace(hour=19, minute=30)), "26 Oct 2026, 7:30 PM")
 
     def test_bank_connection_expiry(self):
         subject, e = email_notify.build_token_expiry_warning("ING", 5)
         self.assertEqual(subject, "Klartion: your ING connection expires in 5 days")
-        self.assertIn({"label": "Expires", "value": "Saturday, October 31"}, e["facts"])
+        self.assertIn({"label": "Expires", "value": "Saturday 31 October"}, e["facts"])
         self.assertEqual(e["cta"]["href"], "http://192.168.1.20:3001/connect")
         subject, e = email_notify.build_token_expiry_warning("ING", 1)
         self.assertEqual(subject, "Klartion: your ING connection expires in 1 day")
