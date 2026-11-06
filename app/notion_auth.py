@@ -144,6 +144,34 @@ def poll() -> dict:
     status = data.get("status")
     if status == "pending":
         return {"status": "pending"}
+    if status == "needs_code":
+        # Notion is signed in; the person who allowed it now types the code shown
+        # in their browser, so a sign-in link from someone else can't connect.
+        return {"status": "needs_code"}
+    return _finish(data, pem)
+
+
+def confirm(code: str) -> dict:
+    """Send the code shown after Notion. Same answers as poll(), with an error for a wrong code."""
+    state_id = db.get_setting("notion_oauth_state") or ""
+    pem = db.get_setting("notion_oauth_key") or ""
+    if not state_id or not pem:
+        return {"status": "error", "error": "No sign-in in progress. Click Connect Notion to start."}
+    payload = _owner()
+    payload.update(state_id=state_id, confirm_code=(code or "").strip())
+    try:
+        r, data = _post("/notion-auth/claim", payload)
+    except requests.RequestException:
+        return {"status": "needs_code", "error": "Could not reach the Klartion server. Check your internet connection and try again."}
+    if data.get("status") == "needs_code":
+        left = data.get("tries_left")
+        tries = f" {left} {'try' if left == 1 else 'tries'} left." if left else ""
+        return {"status": "needs_code", "error": f"That code doesn't match.{tries}"}
+    return _finish(data, pem)
+
+
+def _finish(data: dict, pem: str) -> dict:
+    status = data.get("status")
     if status != "ready":
         _clear_attempt()
         if status == "cancelled":
