@@ -28,6 +28,13 @@
     <a href="{{ url_for('setup_notifications') }}" class="btn btn-secondary" style="margin-top:0.5rem;">Continue →</a>
   {% endif %}
   <div id="connect-status" style="font-size:12px; color:var(--muted); margin-top:0.75rem; display:none;">Waiting for Notion. Finish signing in on the Notion tab.</div>
+  <form id="code-form" style="display:none; margin-top:1rem;">
+    <div style="font-size:13px; color:var(--muted); margin-bottom:0.75rem;">Notion is signed in. Type the code shown in the Notion tab.</div>
+    <label for="confirm-code" style="margin-top:0;">Code</label>
+    <input type="text" id="confirm-code" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="9" placeholder="K7P 3QX" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:3px; text-transform:uppercase;">
+    <div id="code-error" class="alert alert-error" style="display:none; margin-top:0.75rem;"></div>
+    <button id="code-btn" class="btn btn-primary" type="submit" style="margin-top:0.75rem;">Finish connecting</button>
+  </form>
   <details style="margin-top:1.75rem;" {% if key_form_open %}open{% endif %}>
     <summary style="font-size:13px; cursor:pointer; color:var(--muted); margin-bottom:1rem;">Use an integration key instead</summary>
 {% endif %}
@@ -56,6 +63,34 @@
     var statusEl = document.getElementById('connect-status');
     var errEl = document.getElementById('connect-error');
     var timer = null, deadline = 0;
+    var codeForm = document.getElementById('code-form');
+    var codeInput = document.getElementById('confirm-code');
+    var codeErr = document.getElementById('code-error');
+    var codeBtn = document.getElementById('code-btn');
+
+    function connected(d) {
+      if (timer) { clearInterval(timer); timer = null; }
+      {% if is_configured %}location.reload();{% else %}location.href = d.next;{% endif %}
+    }
+    function askForCode() {
+      if (timer) { clearInterval(timer); timer = null; }
+      statusEl.style.display = 'none'; btn.disabled = false;
+      codeForm.style.display = ''; codeInput.focus();
+    }
+    codeForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var code = codeInput.value.replace(/[^A-Za-z0-9]/g, '');
+      if (code.length !== 6) { codeErr.textContent = 'The code has 6 letters and numbers.'; codeErr.style.display = ''; return; }
+      codeBtn.disabled = true; codeErr.style.display = 'none';
+      fetch('/setup/notion/connect/confirm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: code }) })
+        .then(function (r) { return r.json(); }).then(function (d) {
+          codeBtn.disabled = false;
+          if (d.status === 'connected') return connected(d);
+          if (d.status === 'needs_code') { codeErr.textContent = d.error || 'That code doesn\'t match.'; codeErr.style.display = ''; codeInput.select(); return; }
+          codeForm.style.display = 'none'; showError(d.error || 'The sign-in could not be completed. Click Connect Notion to try again.');
+        }).catch(function () { codeBtn.disabled = false; codeErr.textContent = 'Could not reach Klartion. Try again.'; codeErr.style.display = ''; });
+    });
+    codeInput.addEventListener('input', function () { codeErr.style.display = 'none'; });
 
     function showError(msg) {
       errEl.textContent = msg; errEl.style.display = '';
@@ -66,15 +101,16 @@
       if (Date.now() > deadline) return showError('The sign-in timed out. Click Connect Notion to try again.');
       fetch('/setup/notion/connect/status').then(function (r) { return r.json(); }).then(function (d) {
         if (d.status === 'connected') {
-          clearInterval(timer);
-          {% if is_configured %}location.reload();{% else %}location.href = d.next;{% endif %}
+          connected(d);
+        } else if (d.status === 'needs_code') {
+          askForCode();
         } else if (d.status === 'error') {
           showError(d.error);
         }
       }).catch(function () {});
     }
     function waitForNotion() {
-      errEl.style.display = 'none'; statusEl.style.display = ''; btn.disabled = true;
+      errEl.style.display = 'none'; statusEl.style.display = ''; btn.disabled = true; codeForm.style.display = 'none';
       deadline = Date.now() + 30 * 60 * 1000;
       if (!timer) timer = setInterval(check, 2000);
     }

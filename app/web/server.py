@@ -230,6 +230,14 @@ def setup_notion_connect_status():
         result["next"] = url_for("setup_notifications")
     return jsonify(result)
 
+@app.route("/setup/notion/connect/confirm", methods=["POST"])
+def setup_notion_connect_confirm():
+    from ..notion_auth import confirm
+    result = confirm((request.get_json(silent=True) or {}).get("code", ""))
+    if result.get("status") == "connected":
+        result["next"] = url_for("setup_notifications")
+    return jsonify(result)
+
 @app.route("/setup/notifications", methods=["GET", "POST"])
 def setup_notifications():
     error = None
