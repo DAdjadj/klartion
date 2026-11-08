@@ -1142,7 +1142,8 @@ def status():
 
     licence_sync_failed = False
     val = licence.validate()
-    if not val.get("valid") and not val.get("offline"):
+    licence_offline_expired = bool(val.get("offline_expired"))
+    if not val.get("valid") and not val.get("offline") and not licence_offline_expired:
         licence_sync_failed = True
 
     act_info = licence.get_activation_info()
@@ -1235,6 +1236,9 @@ def status():
         is_trial=act_info.get("is_trial", False),
         trial_expires_at=act_info.get("expires_at", "")[:10] if act_info.get("expires_at") else None,
         licence_sync_failed=licence_sync_failed,
+        licence_offline_days_left=val.get("offline_days_left") if val.get("offline") else None,
+        licence_offline_expired=licence_offline_expired,
+        licence_offline_error=val.get("error") if licence_offline_expired else None,
         licence_limit_reached=(licence_sync_failed and activation_usage >= activation_limit and activation_limit > 0),
         bank_seat_error=bank_seat_error,
         page=log_data["page"],

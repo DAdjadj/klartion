@@ -4,6 +4,7 @@ import subprocess
 import platform
 import logging
 import uuid
+from datetime import datetime, timedelta, timezone
 from . import config, db
 
 logger = logging.getLogger(__name__)
@@ -17,6 +18,61 @@ def _post_json(path, payload, timeout=10):
     except ValueError:
         data = {}
     return resp, data
+
+# Offline grace: when api.klartion.com can't be reached, a key it confirmed in
+# the last 30 days keeps working (the same grace as David's Mac apps). After
+# that, syncing stops until the license server can be reached again.
+OFFLINE_GRACE_DAYS = 30
+LAST_ONLINE = "licence_last_online"
+SUPPORT = "support@david-alves.com"
+_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def _now():
+    return datetime.now(timezone.utc)
+
+
+def _confirmed_online():
+    db.set_setting(LAST_ONLINE, _now().isoformat())
+
+
+def _last_online():
+    try:
+        last = datetime.fromisoformat(db.get_setting(LAST_ONLINE) or "")
+    except (TypeError, ValueError):
+        return None
+    return last if last.tzinfo else last.replace(tzinfo=timezone.utc)
+
+
+def offline_days_left(last_online, now):
+    """Whole days of offline use left; 0 means the grace is over."""
+    elapsed = max(now - last_online, timedelta(0))  # a clock that went back counts as no time
+    return max(0, OFFLINE_GRACE_DAYS - elapsed.days)
+
+
+def _offline(key):
+    """The license server couldn't be reached. Only the key already on this machine can carry on,
+    and only for 30 days after the server last confirmed it. Returns None for any other key."""
+    if not key or db.get_setting("licence_key") != key:
+        return None
+    now = _now()
+    last = _last_online()
+    if last is None:
+        # Installs from before this check have no date yet: their 30 days start now.
+        db.set_setting(LAST_ONLINE, now.isoformat())
+        last = now
+    left = offline_days_left(last, now)
+    if left > 0:
+        return {"valid": True, "error": None, "offline": True, "offline_days_left": left}
+    since = f"{last.day} {_MONTHS[last.month - 1]} {last.year}"
+    return {
+        "valid": False,
+        "offline_expired": True,
+        "error": (f"Klartion hasn't reached the license server since {since}, and it only works offline for "
+                  f"{OFFLINE_GRACE_DAYS} days, so syncing has stopped. Check this machine's internet connection: "
+                  f"syncing starts again by itself once the license server can be reached. Need help? Write to {SUPPORT}."),
+    }
+
 
 def _get_hw_uuid():
     system = platform.system()
@@ -85,17 +141,18 @@ def activate(key):
         )
         if resp.status_code in (200, 201) and data.get("valid"):
             db.set_setting("licence_key", key)
-            return {"valid": True, "error": None}
-        elif resp.status_code == 409:
-            db.set_setting("licence_key", key)
+            _confirmed_online()
             return {"valid": True, "error": None}
         else:
+            # Anything else is a refusal, 409 included: the server answers 409 when the
+            # activation limit is reached or a trial was already used on this machine.
             msg = data.get("error") or "Invalid license key."
             return {"valid": False, "error": msg}
     except requests.RequestException as e:
         logger.warning("License activate failed (network): %s", e)
-        if db.get_setting("licence_key") == key:
-            return {"valid": True, "error": None, "offline": True}
+        offline = _offline(key)
+        if offline:
+            return offline
         return {"valid": False, "error": "Could not reach the license server. Check your internet connection and try again."}
 
 def deactivate():
@@ -130,18 +187,20 @@ def validate(key=None):
             {"license_key": key, "machine_fingerprint": fp},
         )
         if resp.status_code == 200 and data.get("valid"):
+            _confirmed_online()
             return {"valid": True, "error": None}
         else:
             # Fingerprint may have changed after update — try re-activating
             reactivation = activate(key)
-            if reactivation.get("valid"):
-                return {"valid": True, "error": None}
+            if reactivation.get("valid") or reactivation.get("offline_expired"):
+                return reactivation
             msg = data.get("error") or "Invalid license key."
             return {"valid": False, "error": msg}
     except requests.RequestException as e:
         logger.warning("License check failed (network): %s", e)
-        if db.get_setting("licence_key") == key:
-            return {"valid": True, "error": None, "offline": True}
+        offline = _offline(key)
+        if offline:
+            return offline
         return {"valid": False, "error": "Could not reach the license server. Check your internet connection."}
 
 def get_activation_info():

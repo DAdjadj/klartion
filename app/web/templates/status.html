@@ -29,6 +29,14 @@
   {% endif %}
 {% endif %}
 
+{% if licence_offline_expired %}
+  <div class="alert alert-error">{{ licence_offline_error }}</div>
+{% elif licence_offline_days_left %}
+  <div class="alert alert-warn">
+    Can't reach the license server: working offline, {{ licence_offline_days_left }} day{{ 's' if licence_offline_days_left != 1 else '' }} left. Klartion syncs offline for up to 30 days, then pauses until it can check your license again.
+  </div>
+{% endif %}
+
 {% if bank_seat_error %}
   <div class="alert alert-error">
     {{ bank_seat_error }} <a href="/connect" style="color:inherit; font-weight:600;">Manage banks &rarr;</a>

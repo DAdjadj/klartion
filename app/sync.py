@@ -39,7 +39,7 @@ def _run_impl(trigger: str):
     # 1. Licence check
     result = licence.validate()
     if not result["valid"]:
-        msg = f"License invalid: {result['error']}"
+        msg = result["error"] if result.get("offline_expired") else f"License invalid: {result['error']}"
         logger.error(msg)
         db.log_sync("failure", message=msg)
         email_notify.send_failure(msg)
