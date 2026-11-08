@@ -1,5 +1,6 @@
 import datetime
 import smtplib
+import ssl
 import logging
 import requests
 from email.mime.text import MIMEText
@@ -56,6 +57,21 @@ def _smtp_host() -> str:
     return config.SMTP_HOST if (config.SMTP_HOST and config.SMTP_HOST != "smtp.mail.me.com") else _smtp_host_for(config.SMTP_USER)
 
 
+def deliver(host: str, port, user: str, password: str, sender: str, to: str, msg):
+    """Hand one email to the SMTP server, the only place Klartion does.
+
+    STARTTLS with a verifying context: the server must show a valid
+    certificate for this host name before the password is sent.
+    Without a context, smtplib accepts any certificate at all.
+    """
+    with smtplib.SMTP(host, int(port or 587)) as server:
+        server.ehlo()
+        server.starttls(context=ssl.create_default_context())
+        server.ehlo()
+        server.login(user, password)
+        server.sendmail(sender, to, msg.as_string())
+
+
 def send(subject: str, body: str, html: str = None):
     if not config.SMTP_USER or not config.NOTIFY_EMAIL:
         logger.warning("Email not configured, skipping notification.")
@@ -68,13 +84,8 @@ def send(subject: str, body: str, html: str = None):
     msg = build_message(subject, body, html, sender, config.NOTIFY_EMAIL)
 
     try:
-        host = _smtp_host()
-        port = int(config.SMTP_PORT or 587)
-        with smtplib.SMTP(host, port) as server:
-            server.ehlo()
-            server.starttls()
-            server.login(config.SMTP_USER, config.SMTP_PASSWORD)
-            server.sendmail(sender, config.NOTIFY_EMAIL, msg.as_string())
+        deliver(_smtp_host(), config.SMTP_PORT, config.SMTP_USER, config.SMTP_PASSWORD,
+                sender, config.NOTIFY_EMAIL, msg)
         logger.info("Email sent: %s", subject)
     except Exception as e:
         logger.error("Failed to send email: %s", e)

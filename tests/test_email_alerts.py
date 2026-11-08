@@ -11,6 +11,7 @@ import datetime
 import email
 import os
 import re
+import ssl
 import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
@@ -172,6 +173,24 @@ class SendingTest(unittest.TestCase):
         self.assertEqual(html.get_content_type(), "text/html")
         self.assertIn("Written: 12 transactions", plain.get_payload(decode=True).decode("utf-8"))
         self.assertIn("kl-cover.jpg", html.get_payload(decode=True).decode("utf-8"))
+
+    def test_starttls_checks_the_server_certificate(self):
+        email_notify.send_success(1, BALANCES)
+        conn = self.sent()[3]
+        context = conn.starttls.call_args.kwargs.get("context")
+        self.assertIsInstance(context, ssl.SSLContext)
+        self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
+        self.assertTrue(context.check_hostname)
+        names = [c[0] for c in conn.mock_calls]
+        self.assertLess(names.index("starttls"), names.index("login"))  # no password before TLS is up
+
+    def test_the_test_email_with_unsaved_settings_checks_the_certificate_too(self):
+        msg = email_notify.build_message("s", "b", None, "sam@gmail.com", "sam@example.com")
+        email_notify.deliver("smtp.gmail.com", None, "sam@gmail.com", "pw2", "sam@gmail.com", "sam@example.com", msg)
+        self.SMTP.assert_called_once_with("smtp.gmail.com", 587)
+        conn = self.sent()[3]
+        self.assertEqual(conn.starttls.call_args.kwargs["context"].verify_mode, ssl.CERT_REQUIRED)
+        conn.login.assert_called_once_with("sam@gmail.com", "pw2")
 
     def test_notify_on_is_respected(self):
         with patch.object(config, "NOTIFY_ON", "errors", create=True):
