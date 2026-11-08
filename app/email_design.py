@@ -58,22 +58,43 @@ def esc(s) -> str:
 
 
 # Content strings may carry [links](https://...). HTML gets an <a>, text gets "words (address)".
+# Only web and mailto links become links; anything else stays as the text it was.
 _LINK = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")
+_SAFE_HREF = re.compile(r"(?:https?://|mailto:)", re.IGNORECASE)
+
+# Text from outside Klartion, such as a bank's name, goes through literal() before it is put
+# into a content string, so its brackets can't form a link. They come back as brackets after.
+_OPEN, _CLOSE = "\ue05b", "\ue05d"
+
+
+def literal(s) -> str:
+    return ("" if s is None else str(s)).replace("[", _OPEN).replace("]", _CLOSE)
+
+
+def _brackets(s: str) -> str:
+    return s.replace(_OPEN, "[").replace(_CLOSE, "]")
 
 
 def md(s, link=LINK, cls="lk") -> str:
-    return _LINK.sub(lambda m: f'<a class="{cls}" href="{m.group(2)}" style="color:{link};text-decoration:underline">{m.group(1)}</a>', esc(s))
+    def repl(m):
+        txt, href = m.group(1), m.group(2)
+        if not _SAFE_HREF.match(href):
+            return m.group(0)
+        return f'<a class="{cls}" href="{href}" style="color:{link};text-decoration:underline">{txt}</a>'
+    return _brackets(_LINK.sub(repl, esc(s)))
 
 
 def plain(s) -> str:
     def repl(m):
         txt, href = m.group(1), m.group(2)
+        if not _SAFE_HREF.match(href):
+            return m.group(0)
         if href == f"mailto:{txt}":
             return txt
         if txt == re.sub(r"^https?://", "", href):
             return href
         return f"{txt} ({href})"
-    return _LINK.sub(repl, "" if s is None else str(s))
+    return _brackets(_LINK.sub(repl, "" if s is None else str(s)))
 
 
 # ── Document ─────────────────────────────────────────────────────
