@@ -342,12 +342,21 @@ def resubscribe_email():
 def setup_sync():
     error = None
     if request.method == "POST":
-        sync_time = request.form.get("sync_time", "08:00").strip()
-        sync_frequency = request.form.get("sync_frequency", "24").strip()
-        _cfg().set("SYNC_TIME", sync_time)
-        _cfg().set("SYNC_FREQUENCY", sync_frequency)
-        _start_scheduler_if_ready()
-        return redirect(url_for("connect"))
+        from .. import scheduler
+        sync_time = scheduler.clean_time(request.form.get("sync_time", "08:00"))
+        sync_frequency = scheduler.clean_frequency(request.form.get("sync_frequency", "24"))
+        if sync_frequency == 0 and sync_time is None:
+            # Manual only hides the start time, so don't hold the form up over it.
+            sync_time = scheduler.sync_settings()[0]
+        if sync_frequency is None:
+            error = "Choose how often to sync from the list."
+        elif sync_time is None:
+            error = "Enter the start time as hours and minutes in 24h format, like 08:00."
+        else:
+            _cfg().set("SYNC_TIME", sync_time)
+            _cfg().set("SYNC_FREQUENCY", str(sync_frequency))
+            _start_scheduler_if_ready()
+            return redirect(url_for("connect"))
     has_simplefin = any(t.get("provider") == "simplefin" for t in db.get_all_tokens())
     return render_template("setup_sync.html",
         error=error,
@@ -379,7 +388,8 @@ def health():
         details["last_sync"] = last_sync or None
         if last_sync:
             last_dt = datetime.fromisoformat(last_sync.replace("Z", "+00:00") if "Z" in last_sync else last_sync)
-            frequency_h = int(_cfg().SYNC_FREQUENCY or 24)
+            from .. import scheduler
+            frequency_h = scheduler.sync_settings()[1]
             overdue_threshold = timedelta(hours=frequency_h + 2)
             age = datetime.now(timezone.utc) - last_dt.replace(tzinfo=timezone.utc) if last_dt.tzinfo is None else datetime.now(timezone.utc) - last_dt
             if age > overdue_threshold:
@@ -1516,14 +1526,11 @@ def banks():
     return resp
 
 def _get_sync_times():
-    sync_time = _cfg().SYNC_TIME or "08:00"
-    frequency = int(_cfg().SYNC_FREQUENCY or "24")
+    from .. import scheduler
+    sync_time, frequency = scheduler.sync_settings()
     if frequency == 0:
         return "Manual only"
-    try:
-        h, m = int(sync_time.split(":")[0]), int(sync_time.split(":")[1])
-    except Exception:
-        h, m = 8, 0
+    h, m = (int(x) for x in sync_time.split(":"))
     times = []
     for i in range(0, 24, frequency):
         t_h = (h + i) % 24
