@@ -1,6 +1,7 @@
 import glob
 import logging
 import os
+import re
 import time
 import uuid
 import requests
@@ -11,6 +12,27 @@ from . import config, db
 logger = logging.getLogger(__name__)
 
 EB_BASE = "https://api.enablebanking.com"
+DATA_DIR = "/app/data"
+
+_APP_ID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+
+def pem_path_for(app_id):
+    """Where the uploaded private key for this Enable Banking application ID goes.
+
+    The ID becomes the file name, so it must be an application ID (a UUID)
+    and the file must land directly in the data folder. Anything else, such
+    as a path or ../ in the field, returns None and nothing is written.
+    """
+    app_id = (app_id or "").strip()
+    if not _APP_ID.fullmatch(app_id):
+        return None
+    base = os.path.realpath(DATA_DIR)
+    path = os.path.realpath(os.path.join(base, f"{app_id}.pem"))
+    if os.path.dirname(path) != base:
+        return None
+    return path
+
 
 def _get_app_id():
     """Extract app ID from UUID-named .pem file in /app/data/"""

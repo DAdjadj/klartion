@@ -10,6 +10,8 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 CONTAINER_NAME = "klartion"
 IMAGE_NAME = "daalves/klartion:latest"
 APP_VERSION = os.environ.get("APP_VERSION", "dev")
+APP_ID_ERROR = ("That Application ID doesn't look right. Copy it from your application in Enable Banking: "
+                "it looks like aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.")
 
 @app.context_processor
 def inject_globals():
@@ -151,8 +153,11 @@ def setup_bank():
         app_id   = request.form.get("eb_app_id", "").strip()
         pem_file = request.files.get("pem_file")
         existing_pem = glob.glob("/app/data/*.pem")
+        pem_path = enablebanking.pem_path_for(app_id)
         if not app_id:
             error = "Application ID is required."
+        elif not pem_path:
+            error = APP_ID_ERROR
         elif not pem_file or not pem_file.filename:
             if not existing_pem:
                 error = "Private key file is required."
@@ -160,7 +165,6 @@ def setup_bank():
                 _cfg().set("EB_APP_ID", app_id)
                 return redirect(url_for("setup_notion"))
         else:
-            pem_path = os.path.join("/app/data", f"{app_id}.pem")
             pem_file.save(pem_path)
             _cfg().set("EB_APP_ID", app_id)
             return redirect(url_for("setup_notion"))
@@ -449,15 +453,16 @@ def connect():
     if request.method == "POST":
         action = request.form.get("action")
         if action == "upload_pem":
-            import os
             pem_file = request.files.get("pem_file")
             app_id   = request.form.get("eb_app_id", "").strip()
+            pem_path = enablebanking.pem_path_for(app_id)
             if not pem_file or not pem_file.filename:
                 error = "Please select a .pem file."
             elif not app_id:
                 error = "Application ID is required."
+            elif not pem_path:
+                error = APP_ID_ERROR
             else:
-                pem_path = os.path.join("/app/data", f"{app_id}.pem")
                 pem_file.save(pem_path)
                 _cfg().set("EB_APP_ID", app_id)
                 return redirect(url_for("connect"))
