@@ -293,7 +293,7 @@ def build_token_expiry_warning(bank_name: str, days_left: int):
         "steps_title": "Renew it in three steps",
         "steps": [
             f"Open Klartion and go to the {_page_link('Bank page', '/connect')}.",
-            f"Click Re-authorize under {bank}.",
+            f"Click Re-authorize under {design.literal(bank)}.",
             "Sign in at your bank and approve access.",
         ],
         "cta": {"label": "Open the Bank page", "href": _app_url("/connect")},

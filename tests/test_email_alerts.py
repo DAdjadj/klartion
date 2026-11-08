@@ -141,6 +141,31 @@ class AlertContentTest(unittest.TestCase):
         self.assertNotIn("<b>Evil</b>", html)
         self.assertIn("&lt;b&gt;Evil&lt;/b&gt; &amp; Co", html)
 
+    def test_only_web_and_mail_links_become_links(self):
+        html = email_design.md("[Notifications page](http://192.168.1.20:3001/setup/notifications) "
+                               "[Docs](https://klartion.com) [Write](mailto:support@david-alves.com)")
+        self.assertEqual(re.findall(r'href="([^"]+)"', html), [
+            "http://192.168.1.20:3001/setup/notifications", "https://klartion.com", "mailto:support@david-alves.com"])
+        for bad in ["javascript:alert(1)", "JavaScript:alert(1)", "data:text/html,x", "vbscript:x", "//evil.example", "file:///etc/passwd"]:
+            with self.subTest(bad):
+                html = email_design.md(f"[click]({bad})")
+                self.assertNotIn("<a", html)
+                self.assertEqual(html, email_design.esc(f"[click]({bad})"))
+                self.assertEqual(email_design.plain(f"[click]({bad})"), f"[click]({bad})")
+
+    def test_a_bank_name_with_brackets_stays_text(self):
+        bank = "Evil](javascript:alert(1)) [Bank](https://evil.example)"
+        subject, e = email_notify.build_token_expiry_warning(bank, 5)
+        html, text = email_design.render_html(e), email_design.render_text(e)
+        self.assertNotIn('href="https://evil.example', html)
+        self.assertNotIn('href="javascript', html)
+        self.assertEqual(re.findall(r'<a class="lk" href="([^"]+)"', html), ["http://192.168.1.20:3001/connect"])
+        self.assertIn("Click Re-authorize under " + email_design.esc(bank) + ".", html)
+        self.assertIn("2. Click Re-authorize under " + bank + ".", text)
+        self.assertNotIn("\ue05b", html + text)
+        # The link Klartion itself writes still works next to it.
+        self.assertIn("1. Open Klartion and go to the Bank page (http://192.168.1.20:3001/connect).", text)
+
 
 class SendingTest(unittest.TestCase):
     def setUp(self):
