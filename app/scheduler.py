@@ -1,3 +1,4 @@
+import re
 import schedule
 import time
 import logging
@@ -22,6 +23,41 @@ def _should_catchup(frequency_hours) -> bool:
 def _run_sync():
     logger.info("Scheduled sync triggered at %s", datetime.now().isoformat())
     sync.run(trigger="scheduled")
+
+# What the Sync page offers. Anything else in the settings (an old or hand-edited
+# value) falls back to the defaults, so a bad value can't stop Klartion starting.
+FREQUENCIES = (0, 6, 12, 24)
+DEFAULT_TIME = "08:00"
+DEFAULT_FREQUENCY = 24
+_TIME = re.compile(r"([01]?\d|2[0-3]):([0-5]\d)")
+
+
+def clean_time(value):
+    """'8:05' or '08:05' as '08:05'; None when it isn't a time of day."""
+    m = _TIME.fullmatch((value or "").strip())
+    return f"{int(m.group(1)):02d}:{m.group(2)}" if m else None
+
+
+def clean_frequency(value):
+    """The frequency in hours when it's one the Sync page offers, else None."""
+    value = str(value if value is not None else "").strip()
+    return int(value) if value in {str(f) for f in FREQUENCIES} else None
+
+
+def sync_settings():
+    """(sync time 'HH:MM', frequency in hours) from the settings, defaults for anything unusable."""
+    raw_time = config.SYNC_TIME or DEFAULT_TIME
+    raw_frequency = getattr(config, "SYNC_FREQUENCY", "") or str(DEFAULT_FREQUENCY)
+    sync_time = clean_time(raw_time)
+    frequency = clean_frequency(raw_frequency)
+    if sync_time is None:
+        logger.warning("Sync time %r isn't a time of day, using %s", raw_time, DEFAULT_TIME)
+        sync_time = DEFAULT_TIME
+    if frequency is None:
+        logger.warning("Sync frequency %r isn't one Klartion offers, using every %dh", raw_frequency, DEFAULT_FREQUENCY)
+        frequency = DEFAULT_FREQUENCY
+    return sync_time, frequency
+
 
 def _parse_time(time_str):
     """Parse HH:MM string into hours and minutes."""
@@ -59,8 +95,7 @@ def get_job_count():
 
 def start():
     global _started
-    sync_time = config.SYNC_TIME or "08:00"
-    frequency = int(getattr(config, 'SYNC_FREQUENCY', '24') or '24')
+    sync_time, frequency = sync_settings()
     tz_name = getattr(config, 'TIMEZONE', '') or ''
     schedule.clear()
 

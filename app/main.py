@@ -12,6 +12,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+def _start_scheduler():
+    # A scheduler problem must never keep the web UI from starting: it's where it gets fixed.
+    try:
+        start_scheduler()
+    except Exception:
+        logger.exception("Could not start the scheduler. Check the Sync page.")
+
 def main():
     logger.info("Klartion starting up...")
 
@@ -29,12 +36,11 @@ def main():
         if result.get("offline_expired"):
             # Keep the schedule: each sync checks again and carries on once the server is back.
             logger.warning(result["error"])
-            start_scheduler()
+            _start_scheduler()
         elif not result["valid"] and not result.get("offline"):
             logger.warning("License invalid: %s — web UI will prompt for setup.", result["error"])
         else:
-            # Start scheduler
-            start_scheduler()
+            _start_scheduler()
     else:
         logger.info("Not fully configured yet — skipping scheduler. Complete setup at http://localhost:3001")
 
