@@ -1,13 +1,58 @@
 import logging
+import threading
+import time
 from notion_client import Client
+from notion_client.errors import HTTPResponseError
 from . import config
 
 logger = logging.getLogger(__name__)
 
+# Notion allows about 3 requests a second per connection and answers 429 with a
+# Retry-After header above that. One shared client, calls spaced out, and a retry
+# on 429/503 keep a large first import from losing rows. Only 429 and 503 are
+# retried: both mean Notion did not handle the request, so a retried page
+# create can't make a duplicate row.
+_MIN_GAP_SECONDS = 0.35
+_RETRY_STATUSES = (429, 503)
+_MAX_ATTEMPTS = 5
+_lock = threading.Lock()
+_shared = {"token": None, "client": None, "last_call": 0.0}
+
+
 def _client():
     from . import notion_auth
     notion_auth.refresh()
-    return Client(auth=config.NOTION_API_KEY)
+    token = config.NOTION_API_KEY
+    with _lock:
+        if _shared["client"] is None or _shared["token"] != token:
+            _shared["client"] = Client(auth=token)
+            _shared["token"] = token
+        return _shared["client"]
+
+
+def _retry_delay(err: HTTPResponseError, attempt: int) -> float:
+    try:
+        return min(float(err.headers.get("retry-after")), 60.0)
+    except (TypeError, ValueError):
+        return float(2 ** attempt)
+
+
+def _call(fn, *args, **kwargs):
+    """Run one Notion request, paced and retried when Notion is busy."""
+    for attempt in range(_MAX_ATTEMPTS):
+        with _lock:
+            wait = _shared["last_call"] + _MIN_GAP_SECONDS - time.monotonic()
+            if wait > 0:
+                time.sleep(wait)
+            _shared["last_call"] = time.monotonic()
+        try:
+            return fn(*args, **kwargs)
+        except HTTPResponseError as e:
+            if e.status not in _RETRY_STATUSES or attempt == _MAX_ATTEMPTS - 1:
+                raise
+            delay = _retry_delay(e, attempt)
+            logger.info("Notion is busy (%s), retrying in %.0f s", e.status, delay)
+            time.sleep(delay)
 
 def write_transaction(tx: dict) -> str:
     """
@@ -62,7 +107,7 @@ def write_transaction(tx: dict) -> str:
     if tx.get("balance") is not None:
         properties["Balance"] = {"number": tx["balance"]}
 
-    page = notion.pages.create(
+    page = _call(notion.pages.create,
         parent={"database_id": config.NOTION_DATABASE_ID},
         properties=properties,
     )
@@ -79,7 +124,7 @@ def update_transaction_status(notion_page_id: str, status: str, amount: float = 
     }
     if amount is not None:
         properties["Amount"] = {"number": amount}
-    notion.pages.update(page_id=notion_page_id, properties=properties)
+    _call(notion.pages.update, page_id=notion_page_id, properties=properties)
 
 # Columns Klartion writes to. The title column is handled separately because
 # every Notion database already has one (usually called "Name").
@@ -104,7 +149,7 @@ def ensure_schema() -> str:
     Returns an error message, or "" when the database is ready.
     """
     notion = _client()
-    props = notion.databases.retrieve(database_id=config.NOTION_DATABASE_ID).get("properties", {})
+    props = _call(notion.databases.retrieve, database_id=config.NOTION_DATABASE_ID).get("properties", {})
     updates = {}
 
     title_name = next((n for n, p in props.items() if p.get("type") == "title"), None)
@@ -123,7 +168,7 @@ def ensure_schema() -> str:
         return "Some columns have the wrong type: " + ", ".join(wrong) + ". Rename or delete them and try again."
 
     if updates:
-        notion.databases.update(database_id=config.NOTION_DATABASE_ID, properties=updates)
+        _call(notion.databases.update, database_id=config.NOTION_DATABASE_ID, properties=updates)
         logger.info("Added or renamed Notion columns: %s", ", ".join(updates))
     return ""
 
@@ -199,7 +244,7 @@ def fetch_category_rules() -> dict:
         if start_cursor:
             kwargs["start_cursor"] = start_cursor
         try:
-            resp = notion.databases.query(**kwargs)
+            resp = _call(notion.databases.query, **kwargs)
         except Exception as e:
             logger.warning("Could not fetch category rules from Notion: %s", e)
             break
@@ -226,7 +271,7 @@ def verify_database() -> bool:
     """
     try:
         notion = _client()
-        notion.databases.retrieve(database_id=config.NOTION_DATABASE_ID)
+        _call(notion.databases.retrieve, database_id=config.NOTION_DATABASE_ID)
         return True
     except Exception as e:
         logger.error("Notion database check failed: %s", e)
