@@ -198,7 +198,7 @@ class PageTest(DiagCase):
                      "Memory now", "Bank connection", "Writing to Notion", "License and updates",
                      "off again after 24 h", "Copy log", "Download log", "Clear",
                      "Done: 2 accounts, 6 new, 3 matched, 18 s", 'href="/diagnostics"', "&#x1FA7A;",
-                     "never IBANs, payees, amounts, keys, Notion pages or addresses"]:
+                     "never IBANs, payees, amounts, keys or Notion pages"]:
             self.assertIn(text, html)
 
     def test_no_secrets_in_the_page(self):
