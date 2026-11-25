@@ -19,12 +19,26 @@ def _start_scheduler():
     except Exception:
         logger.exception("Could not start the scheduler. Check the Sync page.")
 
+def _version_line():
+    import os
+    import platform
+    try:
+        from importlib.metadata import version
+        notion_client = version("notion-client")
+    except Exception:
+        notion_client = "unknown"
+    return (f"Started: Klartion v{os.environ.get('APP_VERSION', 'dev')}, Python {platform.python_version()}, "
+            f"notion-client {notion_client}")
+
 def main():
     logger.info("Klartion starting up...")
 
     # Initialise database first (config depends on it)
     db.init()
     logger.info("Database initialized.")
+
+    from . import diag
+    diag.note("app", _version_line())
 
     # Import config after db is ready
     from . import config

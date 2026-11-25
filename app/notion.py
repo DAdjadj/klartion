@@ -3,7 +3,7 @@ import threading
 import time
 from notion_client import Client
 from notion_client.errors import HTTPResponseError
-from . import config
+from . import config, diag
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +17,22 @@ _RETRY_STATUSES = (429, 503)
 _MAX_ATTEMPTS = 5
 _lock = threading.Lock()
 _shared = {"token": None, "client": None, "last_call": 0.0}
+# Pages added, updated and failed since the sync started, for Diagnostics.
+_counts = {"create": 0, "update": 0, "failed": 0}
+
+
+def reset_counts():
+    _counts.update(create=0, update=0, failed=0)
+
+
+def counts():
+    return _counts["create"], _counts["update"], _counts["failed"]
+
+
+def _endpoint(fn):
+    """'pages.create' for notion.pages.create: what was asked, never its content."""
+    owner = type(getattr(fn, "__self__", None)).__name__.replace("Endpoint", "").lower()
+    return f"{owner}.{getattr(fn, '__name__', 'call')}"
 
 
 def _client():
@@ -39,6 +55,8 @@ def _retry_delay(err: HTTPResponseError, attempt: int) -> float:
 
 def _call(fn, *args, **kwargs):
     """Run one Notion request, paced and retried when Notion is busy."""
+    endpoint = _endpoint(fn)
+    busy, waited = None, 0.0
     for attempt in range(_MAX_ATTEMPTS):
         with _lock:
             wait = _shared["last_call"] + _MIN_GAP_SECONDS - time.monotonic()
@@ -46,13 +64,33 @@ def _call(fn, *args, **kwargs):
                 time.sleep(wait)
             _shared["last_call"] = time.monotonic()
         try:
-            return fn(*args, **kwargs)
+            result = fn(*args, **kwargs)
         except HTTPResponseError as e:
             if e.status not in _RETRY_STATUSES or attempt == _MAX_ATTEMPTS - 1:
+                _counted(endpoint, ok=False)
+                diag.note("notion", f"HTTP {e.status} on {endpoint}"
+                          + (f", after waiting {waited:.0f} s" if waited else ""), error=True)
                 raise
             delay = _retry_delay(e, attempt)
             logger.info("Notion is busy (%s), retrying in %.0f s", e.status, delay)
+            busy, waited = busy or e.status, waited + delay
+            diag.detail("notion", f"HTTP {e.status} on {endpoint}, waiting {delay:.0f} s")
             time.sleep(delay)
+            continue
+        except Exception as e:
+            _counted(endpoint, ok=False)
+            diag.note("notion", f"{endpoint} failed ({diag.error_name(e)})", error=True)
+            raise
+        _counted(endpoint, ok=True)
+        if busy:
+            diag.note("notion", f"HTTP {busy}, waited {waited:.0f} s, worked on retry", error=True)
+        return result
+
+
+def _counted(endpoint, ok):
+    if endpoint in ("pages.create", "pages.update"):
+        key = endpoint.split(".")[1] if ok else "failed"
+        _counts[key] += 1
 
 def write_transaction(tx: dict) -> str:
     """

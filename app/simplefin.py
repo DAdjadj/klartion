@@ -96,6 +96,7 @@ def claim_setup_token(setup_token: str) -> str:
 
     # Send `data=b""` explicitly so `requests` sets a Content-Length: 0
     # body on this empty POST — some servers require it.
+    from . import diag
     try:
         resp = requests.post(
             claim_url,
@@ -104,7 +105,12 @@ def claim_setup_token(setup_token: str) -> str:
             timeout=DEFAULT_TIMEOUT,
         )
     except requests.exceptions.RequestException as exc:
+        diag.note("bank", f"SimpleFIN setup token: could not connect ({type(exc).__name__})", error=True)
         raise SimpleFinError(strip_credentials(str(exc))) from None
+    if resp.ok:
+        diag.note("bank", f"SimpleFIN setup token claimed (HTTP {resp.status_code})")
+    else:
+        diag.note("bank", f"SimpleFIN setup token: HTTP {resp.status_code}", error=True)
     if resp.status_code == 403:
         raise SimpleFinTokenAlreadyClaimed(
             "This setup token has already been used. "
@@ -143,6 +149,7 @@ def _accounts_call(access_url: str, params: dict) -> dict:
     Wraps every requests-level exception so the credentials embedded in the
     access URL never leak via str(e) into logs or user-visible error pages.
     """
+    from . import diag
     base, user, password = parse_access_url(access_url)
     final_params = {"version": "2"}
     final_params.update(params)
@@ -154,7 +161,11 @@ def _accounts_call(access_url: str, params: dict) -> dict:
             timeout=DEFAULT_TIMEOUT,
         )
     except requests.exceptions.RequestException as exc:
+        diag.note("bank", f"SimpleFIN accounts: could not connect ({type(exc).__name__})", error=True)
         raise SimpleFinError(strip_credentials(str(exc))) from None
+    diag.detail("bank", f"SimpleFIN accounts: HTTP {resp.status_code}")
+    if not resp.ok and resp.status_code not in (402, 403):
+        diag.note("bank", f"SimpleFIN accounts: HTTP {resp.status_code}", error=True)
     if resp.status_code == 402:
         raise SimpleFinSubscriptionLapsed(
             "Your SimpleFIN Bridge subscription is not active. "

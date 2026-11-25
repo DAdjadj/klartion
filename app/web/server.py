@@ -1,7 +1,7 @@
 import logging
 import os
 from flask import Flask, render_template, request, redirect, session, url_for, jsonify
-from .. import db, enablebanking, licence, sync
+from .. import db, diag, enablebanking, licence, sync
 
 logger = logging.getLogger(__name__)
 
@@ -288,8 +288,13 @@ def test_email():
             subject, text, html = email_notify.render(email_notify.build_test(
                 notify_email=data["notify_email"], notify_on=data.get("notify_on"), host=host))
             msg = email_notify.build_message(subject, text, html, sender, data["notify_email"])
-            email_notify.deliver(host, _cfg().SMTP_PORT, data["smtp_user"], data["smtp_password"],
-                                 sender, data["notify_email"], msg)
+            try:
+                email_notify.deliver(host, _cfg().SMTP_PORT, data["smtp_user"], data["smtp_password"],
+                                     sender, data["notify_email"], msg)
+            except Exception as e:
+                diag.note("email", f"Failed: test email ({diag.error_name(e)})", error=True)
+                raise
+            diag.note("email", "Sent: test email")
         else:
             email_notify.send_test()
         return jsonify({"ok": True})
@@ -1381,11 +1386,7 @@ def review_submit():
 # ---------------------------------------------------------------------------
 
 def _sanitize_logs(text):
-    import re
-    text = re.sub(r'\b([A-Z]{2}\d{2})\w{4,}(\w{4})\b', r'\1****\2', text)
-    text = re.sub(r'\b(\w{2})\w*(@\w+\.\w+)', r'\1***\2', text)
-    text = re.sub(r"\[?\{'account_id':.*?\}\]?", '[account data redacted]', text)
-    return text
+    return diag.redact_basic(text)
 
 @app.route("/api/logs")
 def api_logs():
@@ -1397,6 +1398,10 @@ def api_logs():
             capture_output=True, text=True, timeout=10
         )
         output = result.stdout + result.stderr
+        if result.returncode != 0:
+            # No Docker access (run outside Docker, or the socket isn't mounted):
+            # the Diagnostics lines are still worth sending to support.
+            output = diag.export_text() or output
         output = _sanitize_logs(output)
         version = subprocess.run(
             ["docker", "inspect", "--format", "{{.Image}}", CONTAINER_NAME],
@@ -1405,6 +1410,161 @@ def api_logs():
         return jsonify({"logs": output, "version": version})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# ---------------------------------------------------------------------------
+# Diagnostics
+# ---------------------------------------------------------------------------
+
+def _fact(fn):
+    """One About fact; a fact that can't be read says so instead of breaking the page."""
+    try:
+        return fn()
+    except Exception as e:
+        logger.warning("Diagnostics fact failed: %s", type(e).__name__)
+        return "Couldn't read this"
+
+def _fact_version():
+    in_docker = os.path.exists("/.dockerenv")
+    return f"v{APP_VERSION}" + (" (Docker)" if in_docker else "")
+
+def _fact_license():
+    if not _cfg().LICENCE_KEY or _cfg().LICENCE_KEY == "pending":
+        return "Not set up"
+    val = licence.validate()
+    info = licence.get_activation_info()
+    machines = f"{info.get('usage', 0)} of {info.get('limit', 2)} machines"
+    if val.get("offline_expired"):
+        return "Stopped: license server not reached for 30 days"
+    if not val.get("valid"):
+        return "Not valid"
+    state = "Active"
+    if info.get("is_trial"):
+        ends = diag._parse_iso(info.get("expires_at") or "")
+        state = "Trial" + (f" until {diag.display_date(ends)}" if ends else "")
+    if val.get("offline"):
+        state += f", offline ({val.get('offline_days_left')} days left)"
+    return f"{state}, {machines}"
+
+def _fact_notion():
+    if not _cfg().NOTION_API_KEY or not _cfg().NOTION_DATABASE_ID:
+        return "Not set up"
+    from .. import notion
+    return "Connected, database found" if notion.verify_database() else "Can't reach the database"
+
+def _fact_banks():
+    tokens = db.get_all_tokens()
+    if not tokens:
+        return "None connected"
+    providers = {}
+    for t in tokens:
+        p = t.get("provider") or "enablebanking"
+        name = {"enablebanking": "Enable Banking", "simplefin": "SimpleFIN"}.get(p, p.capitalize())
+        providers[name] = providers.get(name, 0) + 1
+    banks = sorted({diag.bank_label(t) for t in tokens})
+    ends = []
+    for t in tokens:
+        when = diag._parse_iso(t.get("expires_at") or "")
+        if when:
+            ends.append(when)
+    n = len(tokens)
+    text = (f"{n} account{'s' if n != 1 else ''} ("
+            + ", ".join(f"{k} {v}" for k, v in sorted(providers.items())) + "): " + ", ".join(banks))
+    if ends:
+        text += f". Consent ends {diag.display_date(min(ends))}"
+    return text
+
+def _short_time(dt):
+    """'8:00 AM today', '8:00 AM tomorrow', or '26 Nov 2026 8:00 AM'."""
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    clock, day = diag.display_clock(dt, with_seconds=False), diag.display_date(dt)
+    if day == diag.display_date(now):
+        return f"{clock} today"
+    if day == diag.display_date(now + timedelta(days=1)):
+        return f"{clock} tomorrow"
+    return f"{day} {clock}"
+
+def _fact_last_sync():
+    conn = db.get_conn()
+    row = conn.execute("SELECT ran_at, status, tx_count FROM sync_log ORDER BY ran_at DESC, id DESC LIMIT 1").fetchone()
+    conn.close()
+    if not row:
+        return "Not yet"
+    result = {"success": "Fine", "partial": "Partly", "failure": "Failed"}.get(row["status"], row["status"] or "Unknown")
+    parts = [result, f"{row['tx_count'] or 0} new"]
+    secs = db.get_setting("diag_last_sync_seconds")
+    if secs:
+        parts.append(f"{secs} s")
+    when = diag._parse_iso((row["ran_at"] or "").replace(" ", "T"))
+    if when:
+        parts.append(f"at {_short_time(when)}")
+    return ", ".join(parts)
+
+def _fact_next_sync():
+    from datetime import datetime
+    import schedule
+    from .. import scheduler
+    if scheduler.sync_settings()[1] == 0:
+        return "Manual only"
+    nxt = schedule.next_run() if schedule.jobs else None
+    if not nxt:
+        return "Not scheduled"
+    # schedule keeps naive times in the server's own timezone.
+    return _short_time(nxt.astimezone() if nxt.tzinfo else nxt.replace(tzinfo=datetime.now().astimezone().tzinfo))
+
+def _fact_memory():
+    kb = None
+    try:
+        with open("/proc/self/status") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    kb = int(line.split()[1])
+                    break
+    except OSError:
+        pass
+    if kb is None:
+        import resource
+        import sys
+        peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        kb = peak // 1024 if sys.platform == "darwin" else peak  # bytes on macOS, KB on Linux
+    return f"{max(1, round(kb / 1024))} MB"
+
+def _diagnostics_facts():
+    return [
+        ("Version", _fact(_fact_version)),
+        ("License", _fact(_fact_license)),
+        ("Notion", _fact(_fact_notion)),
+        ("Bank accounts", _fact(_fact_banks)),
+        ("Last sync", _fact(_fact_last_sync)),
+        ("Next sync", _fact(_fact_next_sync)),
+        ("Memory now", _fact(_fact_memory)),
+    ]
+
+@app.route("/diagnostics")
+def diagnostics():
+    # Not gated on setup: Diagnostics matters most when setup is broken.
+    return render_template("diagnostics.html",
+        facts=[(label, diag.redact(value)) for label, value in _diagnostics_facts()],
+        switches=diag.switches(),
+        lines=diag.read(),
+        active="diagnostics",
+    )
+
+@app.route("/diagnostics/detail", methods=["POST"])
+def diagnostics_detail():
+    data = request.get_json(silent=True) or {}
+    key = str(data.get("area", ""))
+    try:
+        diag.set_switch(key, bool(data.get("on")))
+    except ValueError:
+        return jsonify({"error": "Unknown area."}), 400
+    state = next(s for s in diag.switches() if s["key"] == key)
+    return jsonify({"area": key, "on": state["on"], "until": state["until"]})
+
+@app.route("/diagnostics/clear", methods=["POST"])
+def diagnostics_clear():
+    diag.clear()
+    return jsonify({"ok": True})
 
 # ---------------------------------------------------------------------------
 # Update preference + self-update
@@ -1452,8 +1612,13 @@ def update_check():
         ).stdout.strip()
         # local_digest looks like "daalves/klartion@sha256:abc..."
         local_sha = local_digest.split("@")[-1] if "@" in local_digest else ""
-        return jsonify({"available": remote_digest != local_sha and remote_digest != ""})
-    except Exception:
+        available = remote_digest != local_sha and remote_digest != ""
+        diag.detail("update", f"Docker Hub answered HTTP {manifest_resp.status_code}")
+        diag.note("update", "Checked: a new version is available" if available
+                  else "Checked: up to date" if remote_digest else "Checked: Docker Hub gave no answer")
+        return jsonify({"available": available})
+    except Exception as e:
+        diag.note("update", f"Check failed ({diag.error_name(e)})")
         return jsonify({"available": False})
 
 @app.route("/update/run", methods=["POST"])
@@ -1469,11 +1634,14 @@ def update_run():
         if resp.status_code in (404, 405):
             resp = _requests.get(url, headers=headers, timeout=120)
         logger.info("Watchtower update response: %s %s", resp.status_code, resp.text.strip())
+        diag.detail("update", f"Watchtower answered HTTP {resp.status_code}")
         if resp.status_code in (200, 202):
             db.set_setting("update_available", "0")
+            diag.note("update", "Started by Watchtower")
             return jsonify({"updating": True})
     except Exception:
         logger.info("Watchtower not available, falling back to helper container")
+        diag.detail("update", "Watchtower not reachable, using the update helper")
     # Fallback: pull image and spawn a helper container to run docker compose
     import subprocess, os, json as _json
     if not os.path.exists("/var/run/docker.sock"):
@@ -1501,11 +1669,14 @@ def update_run():
         ], capture_output=True, text=True, timeout=15)
         if result.returncode != 0:
             logger.error("Failed to start update helper: %s", result.stderr.strip())
+            diag.note("update", "Failed: the update helper didn't start", error=True)
             return jsonify({"error": "Failed to start update. Try running: docker compose pull && docker compose up -d"}), 500
         db.set_setting("update_available", "0")
+        diag.note("update", "Started by the update helper")
         return jsonify({"updating": True})
     except Exception as e:
         logger.error("Fallback update failed: %s", e)
+        diag.note("update", f"Failed ({diag.error_name(e)})", error=True)
         return jsonify({"error": str(e)}), 500
 
 _banks_cache = None

@@ -4,11 +4,15 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
-from . import config, db, enablebanking, notion, email_notify, licence, crypto, simplefin
+from . import config, db, diag, enablebanking, notion, email_notify, licence, crypto, simplefin
 
 logger = logging.getLogger(__name__)
 
 _sync_lock = threading.Lock()
+# Counts for the Diagnostics "Done" line: transactions the banks sent, and how many were new.
+_stats = {"fetched": 0, "new": 0}
+_TRIGGERS = {"scheduled": "schedule", "manual": "manual", "catch-up": "catch-up after a restart",
+             "post-auth": "after connecting a bank"}
 
 def _is_booked_status(status: str) -> bool:
     return (status or "").upper() in {"BOOK", "BOOKED"}
@@ -35,12 +39,18 @@ def run(trigger: str = "unknown"):
 def _run_impl(trigger: str):
     """Internal sync implementation — callers must hold _sync_lock."""
     logger.info("Starting sync run... (trigger=%s)", trigger)
+    started = time.monotonic()
+    _stats.update(fetched=0, new=0)
+    notion.reset_counts()
+    diag.note("sync", f"Started ({_TRIGGERS.get(trigger, trigger)})")
 
     # 1. Licence check
     result = licence.validate()
     if not result["valid"]:
         msg = result["error"] if result.get("offline_expired") else f"License invalid: {result['error']}"
         logger.error(msg)
+        diag.note("sync", "Stopped: the license isn't valid" if not result.get("offline_expired")
+                  else "Stopped: the license server hasn't been reached for 30 days", error=True)
         db.log_sync("failure", message=msg)
         email_notify.send_failure(msg)
         return False, 0, msg
@@ -50,6 +60,7 @@ def _run_impl(trigger: str):
     if not all_tokens:
         msg = "No bank connection found. Please connect your bank."
         logger.error(msg)
+        diag.note("sync", "Stopped: no bank connected", error=True)
         db.log_sync("failure", message=msg)
         email_notify.send_failure(msg)
         return False, 0, msg
@@ -61,6 +72,7 @@ def _run_impl(trigger: str):
         else:
             msg = seat_result.get("error") or "Bank account limit reached for this license."
             logger.error(msg)
+            diag.note("sync", "Stopped: the license's bank account limit is reached", error=True)
             db.set_setting("license_bank_limit_error", msg)
             db.log_sync("failure", message=msg)
             email_notify.send_failure(msg)
@@ -97,6 +109,7 @@ def _run_impl(trigger: str):
     total_written = 0
     errors = []
     balance_lines = []
+    failed_accounts = 0
 
     sf_data = _prefetch_simplefin_data(all_tokens) if any(t.get("provider") == "simplefin" for t in all_tokens) else {}
 
@@ -112,6 +125,7 @@ def _run_impl(trigger: str):
                 balance_lines.append(label)
             else:
                 errors.append(label)
+                failed_accounts += 1
             continue
         if provider == "simplefin":
             written, token_errors, token_balance_lines = _sync_simplefin_token(tokens, category_rules, sf_data)
@@ -120,6 +134,8 @@ def _run_impl(trigger: str):
         total_written += written
         errors.extend(token_errors)
         balance_lines.extend(token_balance_lines)
+        if token_errors:
+            failed_accounts += 1
 
     # 11. Log and notify
     if errors:
@@ -134,14 +150,39 @@ def _run_impl(trigger: str):
         email_notify.send_success(total_written, balance_lines=balance_lines)
 
     logger.info("Sync complete. %d transactions written.", total_written)
+    _note_done(len(all_tokens), failed_accounts, total_written, time.monotonic() - started)
 
     # 12. Check for updates silently
     try:
         _check_for_update()
-    except Exception:
-        pass
+    except Exception as e:
+        diag.note("update", f"Check failed ({diag.error_name(e)})")
 
     return len(errors) == 0, total_written, "OK"
+
+
+def _plural(n, one, many):
+    return f"{n} {one if n == 1 else many}"
+
+
+def _note_done(accounts, failed, written, seconds):
+    """The Diagnostics lines that close a sync: counts and time, nothing else."""
+    try:
+        seconds = int(round(seconds))
+        db.set_setting("diag_last_sync_seconds", str(seconds))
+        matched = max(0, _stats["fetched"] - _stats["new"])
+        counts = f"{_plural(accounts, 'account', 'accounts')}, {written} new, {matched} matched, {seconds} s"
+        if failed:
+            diag.note("sync", f"Finished with problems: {failed} of {counts}", error=True)
+        else:
+            diag.note("sync", f"Done: {counts}")
+        added, updated, failed_writes = notion.counts()
+        if added or updated or failed_writes:
+            line = f"Added {_plural(added, 'page', 'pages')}, updated {updated}"
+            diag.note("notion", line + (f", {failed_writes} failed" if failed_writes else ""),
+                      error=bool(failed_writes))
+    except Exception:
+        pass
 
 
 def _sync_balance_token(tokens: dict):
@@ -292,9 +333,11 @@ def _sync_enablebanking_token(tokens: dict, category_rules: dict) -> tuple[int, 
         err = re.sub(r" for url: https?://\S+", "", str(e))
         errors.append(f"{bank_label}: {err}")
         logger.error("Failed to fetch transactions for %s: %s", bank_label, err)
+        diag.note("bank", f"{diag.bank_label(tokens)}: could not get transactions ({diag.error_name(e)})", error=True)
         return written, errors, balance_lines
 
     logger.info("Fetched %d transactions from %s", len(all_transactions), bank_label)
+    _stats["fetched"] += len(all_transactions)
 
     tx_prefix = f"{account_uid}:"
     known_ids = db.get_known_tx_ids(tx_id_prefix=tx_prefix)
@@ -349,6 +392,8 @@ def _sync_enablebanking_token(tokens: dict, category_rules: dict) -> tuple[int, 
         if before != len(new_transactions):
             logger.info("Skipped %d pending transactions (skip_pending enabled)", before - len(new_transactions))
     logger.info("%d new transactions after deduplication", len(new_transactions))
+    _stats["new"] += len(new_transactions)
+    diag.detail("bank", f"{diag.bank_label(tokens)}: {len(all_transactions)} from the bank, {len(new_transactions)} new")
 
     _reconcile_pending(account_uid, all_transactions)
 
@@ -388,6 +433,7 @@ def _sync_enablebanking_token(tokens: dict, category_rules: dict) -> tuple[int, 
 
     db.update_token_fields(token_id, last_sync_at=datetime.now(timezone.utc).isoformat())
     logger.info("Synced %d transactions from %s", written, bank_label)
+    diag.detail("notion", f"{diag.bank_label(tokens)}: {_plural(written, 'page', 'pages')} added")
 
     return written, errors, balance_lines
 
@@ -456,9 +502,11 @@ def _prefetch_simplefin_data(all_tokens: list) -> dict:
             )
             results[url_hash] = {"ok": True, "account_set": account_set}
         except simplefin.SimpleFinSubscriptionLapsed as e:
+            diag.note("bank", "SimpleFIN: subscription not active (HTTP 402)", error=True)
             db.set_setting("simplefin_subscription_lapsed", "1")
             results[url_hash] = {"ok": False, "error": "subscription_lapsed", "msg": str(e)}
         except simplefin.SimpleFinAccessRevoked as e:
+            diag.note("bank", "SimpleFIN: access revoked (HTTP 403)", error=True)
             # When a shared access URL is revoked, EVERY sibling token is
             # affected. Persist the full set as a comma-separated list so
             # the UI badges all of them, not just the last one written.
@@ -473,6 +521,7 @@ def _prefetch_simplefin_data(all_tokens: list) -> dict:
             # carries an embedded access URL through str(e).
             safe_msg = simplefin.strip_credentials(str(e))
             logger.error("SimpleFIN prefetch failed for %s: %s", url_hash, safe_msg)
+            diag.note("bank", f"SimpleFIN: could not get accounts ({diag.error_name(e)})", error=True)
             results[url_hash] = {"ok": False, "error": "other", "msg": safe_msg}
     if groups and len(results) == len(groups) and all(r.get("ok") for r in results.values()):
         db.set_setting("simplefin_subscription_lapsed", "")
@@ -614,6 +663,9 @@ def _sync_simplefin_token(tokens: dict, category_rules: dict, sf_data: dict) -> 
         if before != len(new_transactions):
             logger.info("Skipped %d pending SimpleFIN transactions (skip_pending enabled)", before - len(new_transactions))
     logger.info("%d new SimpleFIN transactions for %s after dedup", len(new_transactions), bank_label)
+    _stats["fetched"] += len(raw_transactions)
+    _stats["new"] += len(new_transactions)
+    diag.detail("bank", f"{diag.bank_label(tokens)}: {len(raw_transactions)} from SimpleFIN, {len(new_transactions)} new")
 
     _reconcile_pending_simplefin(prefix, account)
 
@@ -660,6 +712,7 @@ def _sync_simplefin_token(tokens: dict, category_rules: dict, sf_data: dict) -> 
 
     db.update_token_fields(token_id, last_sync_at=datetime.now(timezone.utc).isoformat())
     logger.info("Synced %d SimpleFIN transactions from %s", written, bank_label)
+    diag.detail("notion", f"{diag.bank_label(tokens)}: {_plural(written, 'page', 'pages')} added")
 
     return written, errors, balance_lines
 
@@ -934,5 +987,8 @@ def _check_for_update():
     local_sha = local_digest.split("@")[-1] if "@" in local_digest else ""
     update_available = remote_digest != local_sha and remote_digest != ""
     db.set_setting("update_available", "1" if update_available else "0")
+    diag.detail("update", f"Docker Hub answered HTTP {manifest_resp.status_code}")
+    diag.note("update", "Checked: a new version is available" if update_available
+              else "Checked: up to date" if remote_digest else "Checked: Docker Hub gave no answer")
     if update_available:
         logger.info("Update available for %s", repo)

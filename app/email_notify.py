@@ -72,12 +72,15 @@ def deliver(host: str, port, user: str, password: str, sender: str, to: str, msg
         server.sendmail(sender, to, msg.as_string())
 
 
-def send(subject: str, body: str, html: str = None):
+def send(subject: str, body: str, html: str = None, kind: str = "email"):
+    from . import diag
     if not config.SMTP_USER or not config.NOTIFY_EMAIL:
         logger.warning("Email not configured, skipping notification.")
+        diag.note("email", f"Not sent ({kind}): email isn't set up")
         return
     if _is_unsubscribed(config.NOTIFY_EMAIL):
         logger.info("Skipping email for unsubscribed %s: %s", config.NOTIFY_EMAIL, subject)
+        diag.note("email", f"Not sent ({kind}): unsubscribed")
         return
 
     sender = config.SMTP_FROM or config.SMTP_USER
@@ -87,8 +90,12 @@ def send(subject: str, body: str, html: str = None):
         deliver(_smtp_host(), config.SMTP_PORT, config.SMTP_USER, config.SMTP_PASSWORD,
                 sender, config.NOTIFY_EMAIL, msg)
         logger.info("Email sent: %s", subject)
+        # sendmail only returns once the server accepted the message (250).
+        diag.detail("email", f"Mail server answered 250 for the {kind}, port {config.SMTP_PORT}")
+        diag.note("email", f"Sent: {kind}")
     except Exception as e:
         logger.error("Failed to send email: %s", e)
+        diag.note("email", f"Failed: {kind} ({diag.error_name(e)})", error=True)
 
 
 
@@ -334,32 +341,32 @@ def render(built):
     return subject, design.render_text(e), design.render_html(e)
 
 
-def _send(built):
+def _send(built, kind="email"):
     subject, text, html = render(built)
-    send(subject, text, html=html)
+    send(subject, text, html=html, kind=kind)
 
 
 def send_success(tx_count: int, balance_lines: list = None):
     if config.NOTIFY_ON in ("errors", "never"):
         return
-    _send(build_success(tx_count, balance_lines))
+    _send(build_success(tx_count, balance_lines), "sync summary")
 
 
 def send_failure(error: str, errors: list = None):
     if config.NOTIFY_ON == "never":
         return
-    _send(build_failure(error, errors))
+    _send(build_failure(error, errors), "failure alert")
 
 
 def send_partial(tx_count: int, balance_lines: list, errors: list):
     if config.NOTIFY_ON == "never":
         return
-    _send(build_partial(tx_count, balance_lines, errors))
+    _send(build_partial(tx_count, balance_lines, errors), "partial sync alert")
 
 
 def send_token_expiry_warning(bank_name: str, days_left: int):
-    _send(build_token_expiry_warning(bank_name, days_left))
+    _send(build_token_expiry_warning(bank_name, days_left), "bank consent reminder")
 
 
 def send_test():
-    _send(build_test())
+    _send(build_test(), "test email")

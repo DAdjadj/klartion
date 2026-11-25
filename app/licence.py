@@ -5,7 +5,7 @@ import platform
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
-from . import config, db
+from . import config, db, diag
 
 logger = logging.getLogger(__name__)
 
@@ -142,14 +142,17 @@ def activate(key):
         if resp.status_code in (200, 201) and data.get("valid"):
             db.set_setting("licence_key", key)
             _confirmed_online()
+            diag.note("license", f"Activated on this machine (HTTP {resp.status_code})")
             return {"valid": True, "error": None}
         else:
             # Anything else is a refusal, 409 included: the server answers 409 when the
             # activation limit is reached or a trial was already used on this machine.
+            diag.note("license", f"Activation refused (HTTP {resp.status_code})", error=True)
             msg = data.get("error") or "Invalid license key."
             return {"valid": False, "error": msg}
     except requests.RequestException as e:
         logger.warning("License activate failed (network): %s", e)
+        diag.note("license", f"Activation: license server not reached ({type(e).__name__})", error=True)
         offline = _offline(key)
         if offline:
             return offline
@@ -168,8 +171,10 @@ def deactivate():
         if resp.status_code == 200:
             db.set_setting("licence_key", "")
             db.set_setting("machine_fingerprint", "")
+            diag.note("license", "Deactivated on this machine (HTTP 200)")
             return {"success": True, "error": None}
         else:
+            diag.note("license", f"Deactivation refused (HTTP {resp.status_code})", error=True)
             msg = data.get("error") or "Deactivation failed."
             return {"success": False, "error": msg}
     except requests.RequestException as e:
@@ -186,22 +191,41 @@ def validate(key=None):
             "/validate",
             {"license_key": key, "machine_fingerprint": fp},
         )
+        diag.detail("license", f"Check: HTTP {resp.status_code}")
         if resp.status_code == 200 and data.get("valid"):
             _confirmed_online()
+            _note_check("Check: valid")
             return {"valid": True, "error": None}
         else:
             # Fingerprint may have changed after update — try re-activating
             reactivation = activate(key)
             if reactivation.get("valid") or reactivation.get("offline_expired"):
                 return reactivation
+            _note_check(f"Check: refused (HTTP {resp.status_code})", error=True)
             msg = data.get("error") or "Invalid license key."
             return {"valid": False, "error": msg}
     except requests.RequestException as e:
         logger.warning("License check failed (network): %s", e)
         offline = _offline(key)
         if offline:
+            if offline.get("valid"):
+                _note_check(f"Check: server not reached, works offline for "
+                            f"{offline.get('offline_days_left')} more days", error=True)
+            else:
+                _note_check("Check: server not reached for 30 days, syncing stopped", error=True)
             return offline
+        _note_check(f"Check: server not reached ({type(e).__name__})", error=True)
         return {"valid": False, "error": "Could not reach the license server. Check your internet connection."}
+
+# The license is checked on every Status page load, so the Diagnostics main line
+# is written only when the answer changes; each check is a detailed line.
+_last_check = {"line": None}
+
+
+def _note_check(line, error=False):
+    if _last_check["line"] != line:
+        _last_check["line"] = line
+        diag.note("license", line, error=error)
 
 def get_activation_info():
     key = config.LICENCE_KEY
@@ -209,6 +233,7 @@ def get_activation_info():
         return {"usage": 0, "limit": 2, "bank_account_limit": 2, "bank_seat_usage": 0, "is_trial": False, "expires_at": None}
     try:
         resp, d = _post_json("/info", {"license_key": key}, timeout=5)
+        diag.detail("license", f"Info: HTTP {resp.status_code}")
         if resp.status_code == 200:
             return {
                 "usage": d.get("activation_usage", 0),
@@ -238,6 +263,7 @@ def claim_bank_seat(token, key=None):
             "actual_account": token.get("bank_name", ""),
             "sync_mode": token.get("sync_mode", "transactions"),
         })
+        diag.detail("license", f"Bank slot claim: HTTP {resp.status_code}")
         if resp.status_code == 200:
             return {"ok": True, "used": data.get("used"), "limit": data.get("limit")}
         return {
@@ -269,6 +295,7 @@ def sync_bank_seats(tokens, key=None):
                 if token.get("license_seat_id")
             ],
         })
+        diag.detail("license", f"Bank slots check: HTTP {resp.status_code}")
         if resp.status_code == 200:
             return {"ok": True, "used": data.get("used"), "limit": data.get("limit")}
         return {

@@ -7,7 +7,7 @@ import uuid
 import requests
 from datetime import datetime, timedelta, timezone
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
-from . import config, db
+from . import config, db, diag
 
 logger = logging.getLogger(__name__)
 
@@ -176,6 +176,7 @@ def _raise_with_body(resp, context: str) -> None:
     can be found in the EB control panel."""
     if resp.ok:
         return
+    _note_failure(resp, context.rstrip("/").rsplit("/", 1)[-1])
     body = (resp.text or "")[:1000]
     eb_req_id = resp.headers.get("X-Request-Id") or resp.headers.get("Request-Id") or "<none>"
     # Log all response headers on failure — may contain diagnostic info
@@ -185,6 +186,21 @@ def _raise_with_body(resp, context: str) -> None:
         context, resp.status_code, eb_req_id, resp_headers, body,
     )
     resp.raise_for_status()
+
+def _note_failure(resp, what: str) -> None:
+    """A Diagnostics line for a refused Enable Banking request: its HTTP code and
+    Enable Banking's error name (like EXPIRED_SESSION), never the body itself."""
+    code = ""
+    try:
+        data = resp.json()
+        for key in ("error", "code"):
+            value = data.get(key) if isinstance(data, dict) else None
+            if isinstance(value, str) and re.fullmatch(r"[A-Z][A-Z_]{2,40}", value):
+                code = f", {value}"
+                break
+    except Exception:
+        pass
+    diag.note("bank", f"Enable Banking {what}: HTTP {resp.status_code}{code}", error=True)
 
 def get_banks() -> list:
     resp = requests.get(f"{EB_BASE}/aspsps", headers=_headers(), timeout=15)
@@ -213,6 +229,8 @@ def start_auth(bank_name: str, bank_country: str) -> dict:
         "psu_type": "personal",
     }
     resp = requests.post(f"{EB_BASE}/auth", headers=_headers(), json=payload, timeout=15)
+    if not resp.ok:
+        _note_failure(resp, "consent request")
     resp.raise_for_status()
     data = resp.json()
 
@@ -225,6 +243,9 @@ def start_auth(bank_name: str, bank_country: str) -> dict:
     db.set_setting("pending_valid_until", valid_until)
 
     logger.info("Auth session started: %s for %s (%s)", session_id, bank_name, bank_country)
+    renewing = bool((db.get_setting("pending_reauth_token_id") or "").strip())
+    diag.note("bank", f"{'Consent renewal' if renewing else 'Consent'} asked: "
+                      f"{diag.bank_label(bank_name)} ({bank_country}), 180 days")
     return {"session_id": session_id, "url": auth_url}
 
 def extract_account_uid(account):
@@ -321,6 +342,8 @@ def complete_auth(code: str, state: str) -> dict:
         json={"code": code, "state": clean_state},
         timeout=15,
     )
+    if not resp.ok:
+        _note_failure(resp, "consent")
     resp.raise_for_status()
     data = resp.json()
 
@@ -331,6 +354,16 @@ def complete_auth(code: str, state: str) -> dict:
         raise ValueError("No accounts returned. Check your bank connection.")
 
     logger.info("Auth completed for %s (%s), %d account(s) returned", bank_name, bank_country, len(accounts))
+    days = ""
+    try:
+        until = datetime.fromisoformat(valid_until.replace("Z", "+00:00"))
+        days = f", {max(0, (until - datetime.now(timezone.utc)).days)} days"
+    except Exception:
+        pass
+    renewed = bool((db.get_setting("pending_reauth_token_id") or "").strip())
+    diag.note("bank", f"{'Consent renewed' if renewed else 'Consent given'}: "
+                      f"{diag.bank_label(bank_name)} ({bank_country}), "
+                      f"{len(accounts)} account{'s' if len(accounts) != 1 else ''}{days}")
     return {
         "session_id": session_id,
         "accounts": accounts,
@@ -351,7 +384,9 @@ def get_session_status(session_id: str) -> dict:
             headers=_headers(),
             timeout=10,
         )
+        diag.detail("bank", f"Enable Banking session check: HTTP {resp.status_code}")
         if not resp.ok:
+            _note_failure(resp, "session check")
             return {"status": "ERROR", "http": resp.status_code, "body": (resp.text or "")[:300]}
         data = resp.json()
         return {
@@ -362,6 +397,7 @@ def get_session_status(session_id: str) -> dict:
             "created": data.get("created"),
         }
     except Exception as e:
+        diag.detail("bank", f"Enable Banking session check failed ({diag.error_name(e)})")
         return {"status": "ERROR", "error": str(e)[:200]}
 
 
@@ -396,14 +432,17 @@ def get_transactions(session_id: str, account_uid: str, date_from: str, date_to:
             try:
                 resp = requests.get(url, headers=req_headers, params=params, timeout=30)
             except (requests.ConnectionError, requests.Timeout) as e:
+                diag.detail("bank", f"Enable Banking transactions: {diag.error_name(e)}")
                 if attempt < 3:
                     wait = min(2 ** attempt * 5, 60)
                     logger.warning("Connection error, retrying in %ds (attempt %d/4): %s", wait, attempt + 1, e)
                     time.sleep(wait)
                     continue
                 raise
+            diag.detail("bank", f"Enable Banking transactions, page {page + 1}: HTTP {resp.status_code}")
             if resp.status_code == 429:
                 wait = min(2 ** attempt * 5, 60)
+                diag.note("bank", f"Enable Banking transactions: HTTP 429, waiting {wait} s", error=True)
                 logger.warning("Rate limited (429), retrying in %ds (attempt %d/4)", wait, attempt + 1)
                 time.sleep(wait)
                 continue
@@ -436,8 +475,10 @@ def get_balances(session_id: str, account_uid: str) -> list:
                 headers=req_headers,
                 timeout=15,
             )
+            diag.detail("bank", f"Enable Banking balances: HTTP {resp.status_code}")
             break
         except (requests.ConnectionError, requests.Timeout) as e:
+            diag.detail("bank", f"Enable Banking balances: {diag.error_name(e)}")
             if attempt < 2:
                 wait = min(2 ** attempt * 5, 30)
                 logger.warning("Balance connection error, retrying in %ds (attempt %d/3): %s", wait, attempt + 1, e)

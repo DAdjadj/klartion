@@ -34,6 +34,9 @@
         <a href="/status" {% if active == 'status' %}class="active"{% endif %}>
           <span class="nav-icon">&#x2713;</span> Status
         </a>
+        <a href="/diagnostics" {% if active == 'diagnostics' %}class="active"{% endif %}>
+          <span class="nav-icon">&#x1FA7A;</span> Diagnostics
+        </a>
       </nav>
 
       <div class="shell-footer">
@@ -53,6 +56,7 @@
         <a href="/setup/sync" {% if active == 'sync' %}class="active"{% endif %}>Sync</a>
         <a href="/connect" {% if active in ['bank', 'enable-banking', 'pick-account'] %}class="active"{% endif %}>Bank</a>
         <a href="/status" {% if active == 'status' %}class="active"{% endif %}>Status</a>
+        <a href="/diagnostics" {% if active == 'diagnostics' %}class="active"{% endif %}>Diagnostics</a>
       </nav>
 
       <div class="wrap">
