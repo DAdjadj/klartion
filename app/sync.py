@@ -173,7 +173,8 @@ def _note_done(accounts, failed, written, seconds):
         matched = max(0, _stats["fetched"] - _stats["new"])
         counts = f"{_plural(accounts, 'account', 'accounts')}, {written} new, {matched} matched, {seconds} s"
         if failed:
-            diag.note("sync", f"Finished with problems: {failed} of {counts}", error=True)
+            diag.note("sync", f"Finished with problems: {failed} of {counts.split(',', 1)[0]} failed,"
+                              f"{counts.split(',', 1)[1]}", error=True)
         else:
             diag.note("sync", f"Done: {counts}")
         added, updated, failed_writes = notion.counts()

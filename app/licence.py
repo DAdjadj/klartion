@@ -132,7 +132,8 @@ def _get_fingerprint():
 def get_machine_fingerprint():
     return _get_fingerprint()
 
-def activate(key):
+def activate(key, from_check=False):
+    """from_check: called by validate(), which writes its own Diagnostics line on a refusal."""
     fp = _get_fingerprint()
     try:
         resp, data = _post_json(
@@ -142,17 +143,19 @@ def activate(key):
         if resp.status_code in (200, 201) and data.get("valid"):
             db.set_setting("licence_key", key)
             _confirmed_online()
-            diag.note("license", f"Activated on this machine (HTTP {resp.status_code})")
+            _note_check(f"Activated on this machine (HTTP {resp.status_code})")
             return {"valid": True, "error": None}
         else:
             # Anything else is a refusal, 409 included: the server answers 409 when the
             # activation limit is reached or a trial was already used on this machine.
-            diag.note("license", f"Activation refused (HTTP {resp.status_code})", error=True)
+            if not from_check:
+                _note_check(f"Activation refused (HTTP {resp.status_code})", error=True)
             msg = data.get("error") or "Invalid license key."
             return {"valid": False, "error": msg}
     except requests.RequestException as e:
         logger.warning("License activate failed (network): %s", e)
-        diag.note("license", f"Activation: license server not reached ({type(e).__name__})", error=True)
+        if not from_check:
+            _note_check(f"Activation: license server not reached ({type(e).__name__})", error=True)
         offline = _offline(key)
         if offline:
             return offline
@@ -198,7 +201,7 @@ def validate(key=None):
             return {"valid": True, "error": None}
         else:
             # Fingerprint may have changed after update — try re-activating
-            reactivation = activate(key)
+            reactivation = activate(key, from_check=True)
             if reactivation.get("valid") or reactivation.get("offline_expired"):
                 return reactivation
             _note_check(f"Check: refused (HTTP {resp.status_code})", error=True)

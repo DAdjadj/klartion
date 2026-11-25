@@ -67,9 +67,9 @@ def _call(fn, *args, **kwargs):
             result = fn(*args, **kwargs)
         except HTTPResponseError as e:
             if e.status not in _RETRY_STATUSES or attempt == _MAX_ATTEMPTS - 1:
-                _counted(endpoint, ok=False)
-                diag.note("notion", f"HTTP {e.status} on {endpoint}"
-                          + (f", after waiting {waited:.0f} s" if waited else ""), error=True)
+                if _counted(endpoint, ok=False):
+                    diag.note("notion", f"HTTP {e.status} on {endpoint}"
+                              + (f", after waiting {waited:.0f} s" if waited else ""), error=True)
                 raise
             delay = _retry_delay(e, attempt)
             logger.info("Notion is busy (%s), retrying in %.0f s", e.status, delay)
@@ -78,8 +78,8 @@ def _call(fn, *args, **kwargs):
             time.sleep(delay)
             continue
         except Exception as e:
-            _counted(endpoint, ok=False)
-            diag.note("notion", f"{endpoint} failed ({diag.error_name(e)})", error=True)
+            if _counted(endpoint, ok=False):
+                diag.note("notion", f"{endpoint} failed ({diag.error_name(e)})", error=True)
             raise
         _counted(endpoint, ok=True)
         if busy:
@@ -88,9 +88,13 @@ def _call(fn, *args, **kwargs):
 
 
 def _counted(endpoint, ok):
-    if endpoint in ("pages.create", "pages.update"):
-        key = endpoint.split(".")[1] if ok else "failed"
-        _counts[key] += 1
+    """Count a page write. True when a failure should get its own Diagnostics line:
+    only the first failed page write of a sync does (the rest show as a count)."""
+    if endpoint not in ("pages.create", "pages.update"):
+        return not ok
+    key = endpoint.split(".")[1] if ok else "failed"
+    _counts[key] += 1
+    return not ok and _counts["failed"] == 1
 
 def write_transaction(tx: dict) -> str:
     """

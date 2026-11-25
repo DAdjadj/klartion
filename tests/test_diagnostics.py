@@ -242,5 +242,154 @@ class PageTest(DiagCase):
         self.assertIn("Sync: Started (manual)", data["logs"])
 
 
+def _response(status, body, url):
+    import json
+    import requests
+    r = requests.models.Response()
+    r.status_code, r.url, r._content = status, url, json.dumps(body).encode()
+    r.headers["Content-Type"] = "application/json"
+    return r
+
+
+class _Pages:
+    """Stands in for notion_client's PagesEndpoint (the name is what Diagnostics reports)."""
+    def create(self, **kwargs):
+        return {"id": "1f2e3d4c-5b6a-4789-8a9b-0c1d2e3f4a5b"}
+
+    def update(self, **kwargs):
+        return {}
+
+
+_Pages.__name__ = "PagesEndpoint"
+
+
+class SyncLinesTest(DiagCase):
+    """A whole sync with one Enable Banking and one SimpleFIN account, every outside
+    call faked: the Diagnostics lines it writes, and nothing private in them."""
+    EB_TX = [
+        {"transaction_id": "TX-OLD-1", "status": "BOOK", "booking_date": "2026-11-24",
+         "transaction_amount": {"amount": "987.65", "currency": "EUR"}, "credit_debit_indicator": "DBIT",
+         "creditor": {"name": "SECRET PAYEE LDA"}, "remittance_information": ["RENT PT50000201231234567890154"]},
+        {"transaction_id": "TX-NEW-2", "status": "BOOK", "booking_date": "2026-11-25",
+         "transaction_amount": {"amount": "12.34", "currency": "EUR"}, "credit_debit_indicator": "DBIT",
+         "creditor": {"name": "SECRET PAYEE LDA"}, "remittance_information": ["COFFEE"]},
+    ]
+
+    def setUp(self):
+        super().setUp()
+        from app import crypto, email_notify, enablebanking, notion, sync
+        self.sync = sync
+        settings = dict(LICENCE_KEY="KL-TEST-KEY", NOTION_API_KEY="secret_x", NOTION_DATABASE_ID="db",
+                        SMTP_USER="alex@example.com", SMTP_PASSWORD="pw", NOTIFY_EMAIL="alex@example.com",
+                        SMTP_HOST="smtp.example.com", SMTP_PORT=587, SMTP_FROM="", NOTIFY_ON="all",
+                        KLARTION_URL="http://192.168.1.20:3001")
+        patches = [patch.object(config, k, v, create=True) for k, v in settings.items()] + [
+            patch.object(sync.licence, "validate", return_value={"valid": True, "error": None}),
+            patch.object(sync.licence, "sync_bank_seats", return_value={"ok": True, "used": 2, "limit": 2}),
+            patch.object(notion, "ensure_schema", return_value=""),
+            patch.object(notion, "fetch_category_rules", return_value={}),
+            patch.object(notion, "_client", return_value=type("C", (), {"pages": _Pages()})()),
+            patch.object(notion, "_MIN_GAP_SECONDS", 0),
+            patch.object(enablebanking, "_headers", return_value={}),
+            patch.object(enablebanking, "_psu_signals", return_value={"ip": "", "ua": "", "age_seconds": None}),
+            patch.object(email_notify, "_is_unsubscribed", return_value=False),
+            patch.object(sync, "_check_for_update"),
+            patch.object(sync.time, "sleep"),
+        ]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+        self.deliver = patch.object(email_notify, "deliver").start()
+        self.addCleanup(patch.stopall)
+
+        conn = db.get_conn()
+        for table in ("tokens", "transactions", "sync_log"):
+            conn.execute(f"DELETE FROM {table}")
+        conn.commit()
+        conn.close()
+        db.save_tokens("sess-1", "uid-1", "ING · Joint account", "NL", "2027-05-20T10:00:00+00:00")
+        db.save_simplefin_token("Chase", "US", "ACT-1", crypto.encrypt_credentials(
+            {"access_url": "https://user:pw@bridge.simplefin.org/simplefin"}))
+        db.upsert_transaction(sync._scoped_canonical_tx_id("uid-1", self.EB_TX[0]), "page", "cleared")
+        self.eb_status = 200
+
+    def fake_get(self, url, **kwargs):
+        if url.endswith("/transactions"):
+            if self.eb_status != 200:
+                return _response(self.eb_status, {"error": "EXPIRED_SESSION", "message": "PT50000201231234567890154"}, url)
+            return _response(200, {"transactions": self.EB_TX}, url)
+        if url.endswith("/balances"):
+            return _response(200, {"balances": [{"balance_type": "CLBD",
+                                                 "balance_amount": {"amount": "5432.10", "currency": "EUR"}}]}, url)
+        if "/sessions/" in url:
+            return _response(200, {"status": "AUTHORIZED"}, url)
+        if url.endswith("/accounts"):  # SimpleFIN
+            import time as _t
+            return _response(200, {"errors": [], "accounts": [{
+                "id": "ACT-1", "currency": "USD", "balance": "1234.56", "transactions": [
+                    {"id": "SF-1", "posted": int(_t.time()) - 3600, "amount": "-42.17",
+                     "description": "STARBUCKS SECRET PAYEE", "pending": False}]}]}, url)
+        return _response(404, {}, url)
+
+    def run_sync(self):
+        with patch("requests.get", side_effect=self.fake_get):
+            self.sync.run(trigger="manual")
+        return [l["text"] for l in diag.read()]
+
+    def assert_private_data_absent(self):
+        text = self.file_text()
+        for private in ["SECRET PAYEE", "987.65", "12.34", "42.17", "5432.10", "1234.56", "PT50000201231234567890154",
+                        "Joint account", "uid-1", "sess-1", "ACT-1", "alex@example.com", "bridge.simplefin.org",
+                        "STARBUCKS", "RENT"]:
+            self.assertNotIn(private, text)
+
+    def test_a_good_sync(self):
+        diag.set_switch("bank", True)
+        diag.set_switch("notion", True)
+        diag.set_switch("email", True)
+        lines = self.run_sync()
+        for expected in ["Started (manual)", "Done: 2 accounts, 2 new, 1 matched, 0 s",
+                         "Added 2 pages, updated 0", "Sent: sync summary",
+                         "ING: 2 from the bank, 1 new", "Chase: 1 from SimpleFIN, 1 new",
+                         "ING: 1 page added", "Chase: 1 page added",
+                         "Enable Banking transactions, page 1: HTTP 200", "Enable Banking balances: HTTP 200",
+                         "Enable Banking session check: HTTP 200", "SimpleFIN accounts: HTTP 200",
+                         "Mail server answered 250 for the sync summary, port 587"]:
+            self.assertIn(expected, lines)
+        self.assertFalse(any(l.startswith(("Bank:", "Notion:", "Sync:")) for l in lines))  # no errors
+        self.assertEqual(db.get_setting("diag_last_sync_seconds"), "0")
+        self.assert_private_data_absent()
+
+    def test_detail_lines_stay_out_while_switches_are_off(self):
+        lines = self.run_sync()
+        self.assertIn("Done: 2 accounts, 2 new, 1 matched, 0 s", lines)
+        self.assertNotIn("SimpleFIN accounts: HTTP 200", lines)
+        self.assertNotIn("ING: 1 page added", lines)
+
+    def test_a_bank_refusal(self):
+        self.eb_status = 400
+        lines = self.run_sync()
+        for expected in ["Bank: Enable Banking transactions: HTTP 400, EXPIRED_SESSION",
+                         "Bank: ING: could not get transactions (HTTPError, HTTP 400)",
+                         "Sync: Finished with problems: 1 of 2 accounts failed, 1 new, 0 matched, 0 s"]:
+            self.assertIn(expected, lines)
+        self.assert_private_data_absent()
+
+    def test_only_the_first_failed_page_write_gets_a_line(self):
+        from notion_client.errors import APIResponseError
+        import httpx
+
+        class Refusing(_Pages):
+            def create(self, **kwargs):
+                raise APIResponseError(httpx.Response(400, request=httpx.Request("POST", "https://api.notion.com")),
+                                       "validation_error", "validation_error")
+        Refusing.__name__ = "PagesEndpoint"
+        from app import notion
+        with patch.object(notion, "_client", return_value=type("C", (), {"pages": Refusing()})()):
+            lines = self.run_sync()
+        self.assertEqual(sum(1 for l in lines if "pages.create" in l), 1)
+        self.assertIn("Notion: Added 0 pages, updated 0, 2 failed", lines)
+
+
 if __name__ == "__main__":
     unittest.main()
