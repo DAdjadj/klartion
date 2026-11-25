@@ -237,7 +237,7 @@
       <div class="card-title" style="font-size:15px;margin-bottom:0;">Actions</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:1rem;">
         <button class="btn btn-ghost" id="update-btn" onclick="runUpdate()" style="font-size:12px;{% if update_available %}background:var(--success, #37996b);color:#fff;border-color:transparent;{% endif %}">{% if update_available %}Update available{% else %}Check for updates{% endif %}</button>
-        <button class="btn btn-ghost" id="download-logs-btn" onclick="downloadLogs()" style="font-size:12px;">Download logs</button>
+        <a class="btn btn-ghost" href="/diagnostics" style="font-size:12px;text-decoration:none;">Diagnostics</a>
         {% if activation_usage > 0 %}
         <form method="POST" action="/settings/deactivate" onsubmit="return confirm('This will deactivate your license on this machine. You can re-enter your key to reactivate. Continue?');" style="margin:0;">
           <button type="submit" class="btn btn-ghost" style="color:var(--danger, #c0392b);font-size:12px;">Deactivate license ({{ activation_usage }}/{{ activation_limit }})</button>
@@ -251,29 +251,6 @@
 </div>
 
 <script>
-  async function downloadLogs() {
-    var btn = document.getElementById('download-logs-btn');
-    btn.textContent = 'Fetching...';
-    btn.disabled = true;
-    try {
-      var resp = await fetch('/api/logs?lines=500');
-      var data = await resp.json();
-      if (data.logs) {
-        var blob = new Blob([data.logs], { type: 'text/plain' });
-        var a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        var now = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-        a.download = 'klartion-logs-' + now + '-' + (data.version || 'unknown') + '.txt';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(a.href);
-      }
-    } catch(e) {}
-    btn.textContent = 'Download logs';
-    btn.disabled = false;
-  }
-
   async function runUpdate() {
     const btn = document.getElementById('update-btn');
     const status = document.getElementById('update-status');

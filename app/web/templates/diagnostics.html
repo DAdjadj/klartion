@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}Diagnostics · Klartion{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-header-row" style="margin-bottom:0;">
+    <div class="card-header-text">
+      <div class="card-title">Diagnostics</div>
+      <div class="card-sub">What Klartion did, for support.</div>
+    </div>
+    <button class="btn btn-ghost" id="copy-facts-btn" type="button" onclick="copyFacts()" style="font-size:12px;">Copy</button>
+  </div>
+  <div id="diag-facts">
+    {% for label, value in facts %}
+    <div class="stat-row"><span class="stat-label">{{ label }}</span><span class="stat-value">{{ value }}</span></div>
+    {% endfor %}
+  </div>
+  <div class="diag-hint">Kept on your server only. The log records what Klartion did, with counts and times, never IBANs, payees, amounts, keys or Notion pages. Download log also holds the app's own technical lines, with server addresses and bank session IDs, for support.</div>
+</div>
+
+<div class="card">
+  <div class="card-title" style="font-size:15px;">Detailed log <span class="diag-title-note">off again after 24 h</span></div>
+  {% for s in switches %}
+  <label class="diag-toggle">
+    <span>{{ s.title }}{% if s.sub %}<small>{{ s.sub }}</small>{% endif %}<small class="diag-until" id="until-{{ s.key }}">{% if s.on %}On until {{ s.until }}{% endif %}</small></span>
+    <input type="checkbox" class="diag-switch" data-area="{{ s.key }}" {% if s.on %}checked{% endif %} aria-label="{{ s.title }}">
+  </label>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <div class="card-title" style="font-size:15px;">Log</div>
+  <div class="diag-bar">
+    <input id="diag-filter" placeholder="Filter" autocomplete="off">
+    <button class="btn btn-ghost" type="button" id="copy-log-btn" onclick="copyLog()">Copy log</button>
+    <button class="btn btn-ghost" type="button" id="download-logs-btn" onclick="downloadLogs()">Download log</button>
+    <button class="btn btn-ghost" type="button" id="clear-log-btn" onclick="clearLog()" style="color:var(--danger);">Clear</button>
+  </div>
+  <div class="diag-pills" role="group" aria-label="Show">
+    {% for key, label in [('all','All'),('Sync','Sync'),('Bank','Bank'),('Notion','Notion'),('Email','Email'),('License','License'),('errors','Errors')] %}
+    <button type="button" class="diag-pill{% if key == 'all' %} active{% endif %}" data-pill="{{ key }}">{{ label }}</button>
+    {% endfor %}
+  </div>
+  <div class="diag-log" id="diag-log">{% for l in lines %}<div class="diag-line{% if l.error %} err{% endif %}" data-topic="{{ l.topic }}" data-error="{{ 1 if l.error else 0 }}"><span class="diag-time">{{ l.time }}</span>  {{ "%-8s"|format(l.area) }}{{ l.text }}</div>{% endfor %}</div>
+  <div class="diag-empty" id="diag-empty"{% if lines %} hidden{% endif %}>Nothing logged yet.</div>
+</div>
+
+<script>
+(function () {
+  var pill = 'all';
+  // Sync shows Klartion's own start lines too; License shows update checks too.
+  var groups = { Sync: ['Sync', 'App'], License: ['License', 'Update'] };
+
+  function lines() { return Array.prototype.slice.call(document.querySelectorAll('.diag-line')); }
+
+  function applyFilter() {
+    var q = document.getElementById('diag-filter').value.trim().toLowerCase();
+    var shown = 0;
+    lines().forEach(function (el) {
+      var topic = el.getAttribute('data-topic');
+      var ok = pill === 'all' ? true
+        : pill === 'errors' ? el.getAttribute('data-error') === '1'
+        : (groups[pill] || [pill]).indexOf(topic) !== -1;
+      if (ok && q) ok = el.textContent.toLowerCase().indexOf(q) !== -1;
+      el.hidden = !ok;
+      if (ok) shown++;
+    });
+    var empty = document.getElementById('diag-empty');
+    empty.hidden = shown > 0;
+    empty.textContent = lines().length ? 'No lines match.' : 'Nothing logged yet.';
+  }
+
+  document.getElementById('diag-filter').addEventListener('input', applyFilter);
+  document.querySelectorAll('.diag-pill').forEach(function (b) {
+    b.addEventListener('click', function () {
+      pill = b.getAttribute('data-pill');
+      document.querySelectorAll('.diag-pill').forEach(function (x) { x.classList.toggle('active', x === b); });
+      applyFilter();
+    });
+  });
+
+  // Plain http has no clipboard API, so fall back to a hidden text box.
+  function copyText(text, btn, label) {
+    function done(ok) {
+      btn.textContent = ok ? 'Copied' : 'Couldn’t copy';
+      setTimeout(function () { btn.textContent = label; }, 1500);
+    }
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta);
+      done(ok);
+    }
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(function () { done(true); }, fallback);
+    } else {
+      fallback();
+    }
+  }
+
+  window.copyFacts = function () {
+    var text = Array.prototype.map.call(document.querySelectorAll('#diag-facts .stat-row'), function (r) {
+      return r.querySelector('.stat-label').textContent.trim() + ': ' + r.querySelector('.stat-value').textContent.trim();
+    }).join('\n');
+    copyText(text, document.getElementById('copy-facts-btn'), 'Copy');
+  };
+
+  window.copyLog = function () {
+    var text = lines().filter(function (el) { return !el.hidden; })
+      .map(function (el) { return el.textContent; }).join('\n');
+    copyText(text, document.getElementById('copy-log-btn'), 'Copy log');
+  };
+
+  window.downloadLogs = async function () {
+    var btn = document.getElementById('download-logs-btn');
+    btn.textContent = 'Fetching...';
+    btn.disabled = true;
+    try {
+      var resp = await fetch('/api/logs?lines=500');
+      var data = await resp.json();
+      if (data.logs) {
+        var blob = new Blob([data.logs], { type: 'text/plain' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        var now = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        a.download = 'klartion-logs-' + now + '-' + (data.version || 'unknown') + '.txt';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(a.href);
+      }
+    } catch (e) {}
+    btn.textContent = 'Download log';
+    btn.disabled = false;
+  };
+
+  window.clearLog = async function () {
+    var btn = document.getElementById('clear-log-btn');
+    btn.disabled = true;
+    try {
+      var resp = await fetch('/diagnostics/clear', { method: 'POST' });
+      if (resp.ok) {
+        lines().forEach(function (el) { el.parentNode.removeChild(el); });
+        applyFilter();
+      }
+    } catch (e) {}
+    btn.disabled = false;
+  };
+
+  document.querySelectorAll('.diag-switch').forEach(function (sw) {
+    sw.addEventListener('change', async function () {
+      var area = sw.getAttribute('data-area');
+      var until = document.getElementById('until-' + area);
+      try {
+        var resp = await fetch('/diagnostics/detail', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ area: area, on: sw.checked })
+        });
+        var data = await resp.json();
+        if (!resp.ok) throw new Error();
+        sw.checked = data.on;
+        until.textContent = data.on ? 'On until ' + data.until : '';
+      } catch (e) {
+        sw.checked = !sw.checked;
+      }
+    });
+  });
+})();
+</script>
+{% endblock %}
